@@ -1,0 +1,45 @@
+set positional-arguments
+
+env := "prosody-controller"
+
+# justfile config
+# lists all recipes so you can quickly discover available workflows.
+default: help
+
+help:
+  @just --list
+
+# docs navigation
+# displays a subtree with repo-aware path resolution for quick structure
+# checks. use `just tree -h` for usage.
+tree *args:
+    @bash "{{justfile_directory()}}/scripts/dev/justfile/tree.sh" "$@"
+
+# project config
+# installs the project mamba environment.
+bootstrap:
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/bootstrap.sh"
+
+# updates the project mamba environment after adding/removing dependencies.
+update-env:
+  @env condarc="${mgc_condarc:-${condarc:-${xdg_config_home:-$home/.config}/conda/.condarc}}" mamba env update -n {{env}} -f "{{justfile_directory()}}/environment.yml" --prune
+
+# removes the project mamba environment from this machine.
+remove-env:
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" remove-env
+
+activate:
+  @echo "run this in your shell:"
+  @echo '  eval "$(mamba shell hook --shell zsh)"'
+  @echo "  mamba activate {{env}}"
+
+deactivate:
+  @echo "run this in your shell:"
+  @echo "  mamba deactivate"
+
+jupyter-lab *args:
+  @env condarc="${mgc_condarc:-${condarc:-${xdg_config_home:-$home/.config}/conda/.condarc}}" mamba run -n {{env}} jupyter lab --serverapp.root_dir="{{justfile_directory()}}" "$@"
+
+
+# ml
+

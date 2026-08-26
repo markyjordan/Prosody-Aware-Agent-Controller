@@ -1,0 +1,83 @@
+# Project
+.jibsa/
+
+# OS
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Editor / IDE
+.vscode/
+.vscode-test/
+.history/
+*.sw?
+*~
+.netrwhist
+Session.vim
+Sessionx.vim
+.nvimlog
+
+# AI tooling
+.claude/*
+!.claude/settings.json
+!.claude/CLAUDE.md
+!.claude/commands/
+**/.claude/settings.local.json
+
+.codex/*
+!.codex/settings.json
+!.codex/instructions.md
+**/.codex/settings.local.json
+
+.gemini/
+**/.gemini/settings.local.json
+
+.grok/
+**/.grok/settings.local.json
+
+.cursor/
+**/.cursor/settings.local.json
+
+.prompts/cache/
+**/*.agent.md
+**/*.agents.md
+**/*_agent_notes.md
+**/*_scratch.md
+**/*_plan.local.md
+**/*.codex.patch
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+*.whl
+.Python
+venv/
+.venv/
+.conda/
+.mypy_cache/
+.pytype/
+.ruff_cache/
+.pylint.d/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Logs / temp / cache
+*.log
+*.tmp
+*.temp
+.cache/
+.tmp/
+tmp/
+logs/

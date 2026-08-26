@@ -1,0 +1,8 @@
+auto_activate_base: false
+channels:
+  - conda-forge
+channel_priority: strict
+solver: libmamba
+remote_max_retries: 10
+remote_connect_timeout_secs: 30.0
+remote_read_timeout_secs: 120.0

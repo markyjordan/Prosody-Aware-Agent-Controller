@@ -1,0 +1,17 @@
+dev:
+	npm run dev
+
+build:
+	npm run build
+
+typecheck:
+	npm run typecheck
+
+check:
+	npm run build
+
+mock:
+	node mock/server.mjs
+
+smoke:
+	npm run test:smoke

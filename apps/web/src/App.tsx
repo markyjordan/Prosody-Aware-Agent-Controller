@@ -1,0 +1,185 @@
+import * as stylex from "@stylexjs/stylex";
+import { tokens, lightTheme, WAVE_COLORS } from "./styles/tokens.stylex";
+import { useSessionStore } from "./state/store";
+import { Header } from "./components/Header";
+import { MicButton } from "./components/MicButton";
+import { ModeToggle } from "./components/ModeToggle";
+import { ScenarioSelect } from "./components/ScenarioSelect";
+import { SimulateButton } from "./components/SimulateButton";
+import { TrialLog } from "./components/TrialLog";
+import { TrialStage } from "./components/TrialStage";
+import { Waveform } from "./components/Waveform";
+import { useRecorder } from "./hooks/useRecorder";
+import { useSession } from "./hooks/useSession";
+import { session } from "./session/session";
+import type { ConnState, TrialStatus } from "./state/store";
+
+const MIC_ENABLED = import.meta.env.VITE_MIC === "1";
+
+const styles = stylex.create({
+  root: {
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
+    backgroundColor: tokens.bg,
+    color: tokens.textPrimary,
+    fontFamily:
+      "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+  },
+  stage: {
+    flex: 1,
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    padding: "8px 16px",
+  },
+  composer: {
+    borderTop: `1px solid ${tokens.border}`,
+    backgroundColor: tokens.surface,
+    padding: "10px 20px 14px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    "@media (max-width: 640px)": {
+      padding: "8px 12px 10px",
+    },
+  },
+  composerRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 12,
+    maxWidth: 860,
+    width: "100%",
+    margin: "0 auto",
+    "@media (max-width: 640px)": {
+      gap: 8,
+    },
+  },
+  status: {
+    fontSize: 12,
+    color: tokens.textMuted,
+    textAlign: "center",
+    minHeight: 16,
+    overflowWrap: "anywhere",
+    padding: "0 8px",
+  },
+  statusError: {
+    color: tokens.recording,
+    fontWeight: 600,
+  },
+  statusRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    maxWidth: 860,
+    width: "100%",
+    margin: "0 auto",
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+});
+
+const DOT_COLOR: Record<ConnState, string> = {
+  connected: tokens.ok,
+  connecting: tokens.warn,
+  disconnected: tokens.recording,
+};
+
+const CONN_LABEL: Record<ConnState, string> = {
+  connected: "connected",
+  connecting: "connecting…",
+  disconnected: "offline",
+};
+
+function statusText(
+  conn: ConnState,
+  turnStatus: TrialStatus | null,
+  micEnabled: boolean,
+): string {
+  if (conn === "disconnected") return "disconnected — retrying…";
+  if (conn === "connecting") return "connecting…";
+  switch (turnStatus) {
+    case "listening":
+      return "listening…";
+    case "transcribing":
+      return "transcribing…";
+    case "responding":
+      return "responding (A/B)…";
+    case "error":
+      return "error";
+    default:
+      return micEnabled
+        ? "hold the mic — or Space — and speak"
+        : "press simulate to run the selected scenario through the wire protocol";
+  }
+}
+
+export default function App() {
+  const recorder = useRecorder({
+    onChunk: (base64Pcm16) =>
+      session.send({ type: "audio.delta", data: base64Pcm16 }),
+  });
+  const { conn, statusLine } = useSession();
+
+  const trials = useSessionStore((s) => s.trials);
+  const liveTrialId = useSessionStore((s) => s.liveTrialId);
+  const liveTrial = liveTrialId
+    ? trials.find((t) => t.id === liveTrialId)
+    : undefined;
+  const turnStatus =
+    liveTrial && liveTrial.status !== "complete" ? liveTrial.status : null;
+  const recording = useSessionStore((s) => s.recording);
+  const theme = useSessionStore((s) => s.theme);
+
+  const line =
+    statusLine ||
+    statusText(conn, recording ? "listening" : turnStatus, MIC_ENABLED);
+  const isError = statusLine.startsWith("error:");
+
+  return (
+    <div
+      {...stylex.props(styles.root, theme === "light" ? lightTheme : null)}
+    >
+      <Header />
+      <main {...stylex.props(styles.stage)}>
+        <TrialStage />
+      </main>
+      <footer {...stylex.props(styles.composer)}>
+        <TrialLog />
+        <div {...stylex.props(styles.composerRow)}>
+          <SimulateButton />
+          <ScenarioSelect />
+          <ModeToggle />
+          {MIC_ENABLED ? (
+            <>
+              <MicButton recorder={recorder} />
+              <Waveform recorder={recorder} colors={WAVE_COLORS[theme]} />
+            </>
+          ) : null}
+        </div>
+        <div {...stylex.props(styles.statusRow)}>
+          <span
+            {...stylex.props(styles.statusDot)}
+            style={{ backgroundColor: DOT_COLOR[conn] }}
+            title={CONN_LABEL[conn]}
+          />
+          <div
+            {...stylex.props(
+              styles.status,
+              isError ? styles.statusError : null,
+            )}
+          >
+            {line}
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}

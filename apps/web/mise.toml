@@ -1,0 +1,5 @@
+[tools]
+node = "26"
+
+[env]
+MOCK_PORT = "8787"

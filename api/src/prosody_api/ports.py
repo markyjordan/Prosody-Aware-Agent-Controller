@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 from typing import Protocol
 
-from .schemas import Prosody
+from .schemas import Prosody, ProsodyRequest
 
 
 class LLMPort(Protocol):
@@ -37,3 +37,7 @@ class TTSServicePort(Protocol):
         voice_id: str | None = None,
         model_id: str | None = None,
     ) -> None: ...
+
+
+class ProsodyPredictorPort(Protocol):
+    def predict(self, request: ProsodyRequest) -> Prosody: ...

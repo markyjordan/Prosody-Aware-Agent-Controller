@@ -1,8 +1,7 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
-
 from fastapi import FastAPI
 
+from .artifacts import ProsodyArtifactLocator
 from .config import get_settings
 
 
@@ -11,16 +10,17 @@ async def lifespan(app: FastAPI):
     dependencies = getattr(app.state, "dependencies", None)
     settings = dependencies.settings if dependencies is not None else get_settings()
     # ensure cache dir exists
-    Path(settings["cache_dir"]).mkdir(parents=True, exist_ok=True)
-    # try load prosody probe artifact if present (research/artifacts/probe.pt)
-    probe_path = Path(settings["probe_path"])
-    # also check research/artifacts/probe.pt as fallback
-    research_probe = Path(__file__).resolve().parents[4] / "research" / "artifacts" / "probe.pt"
-    probe_found = probe_path.exists() or research_probe.exists()
-    app.state.probe_path = str(probe_path if probe_path.exists() else research_probe if research_probe.exists() else probe_path)
-    app.state.probe_found = probe_found
+    settings["cache_dir"].mkdir(parents=True, exist_ok=True)
+    locator = (
+        dependencies.prosody_artifacts
+        if dependencies is not None and dependencies.prosody_artifacts is not None
+        else ProsodyArtifactLocator.from_settings(settings)
+    )
+    artifact = locator.discover()
+    app.state.probe_path = str(artifact.selected_path)
+    app.state.probe_found = artifact.found
     app.state.probe = None
-    if probe_found:
+    if artifact.found:
         try:
             # lazy import torch if available
             import torch  # type: ignore
@@ -28,7 +28,11 @@ async def lifespan(app: FastAPI):
             # placeholder: load artifact (weights) — research pipeline will define format
             # e.g., torch.load(probe_path) or joblib.load
             # keep stub for now
-            app.state.probe = {"path": str(probe_path), "loaded": False, "note": "stub — wire to research artifact"}
+            app.state.probe = {
+                "path": str(artifact.configured_path),
+                "loaded": False,
+                "note": "stub — wire to research artifact",
+            }
         except Exception:
             app.state.probe = None
     yield

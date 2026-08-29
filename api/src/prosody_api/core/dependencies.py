@@ -6,7 +6,13 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from .config import Settings
-from ..ports import ConditionPromptBuilder, LLMPort, TTSServicePort
+from ..ports import (
+    ConditionPromptBuilder,
+    LLMPort,
+    ProsodyPredictorPort,
+    TTSServicePort,
+)
+from .artifacts import ProsodyArtifactLocator
 
 
 class Clock(Protocol):
@@ -52,3 +58,5 @@ class DependencyContainer:
     llm: LLMPort | None = None
     condition_prompt_builder: ConditionPromptBuilder | None = None
     tts: TTSServicePort | None = None
+    prosody_predictor: ProsodyPredictorPort | None = None
+    prosody_artifacts: ProsodyArtifactLocator | None = None

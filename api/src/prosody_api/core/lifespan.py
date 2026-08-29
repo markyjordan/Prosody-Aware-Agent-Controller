@@ -8,7 +8,8 @@ from .config import get_settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = get_settings()
+    dependencies = getattr(app.state, "dependencies", None)
+    settings = dependencies.settings if dependencies is not None else get_settings()
     # ensure cache dir exists
     Path(settings["cache_dir"]).mkdir(parents=True, exist_ok=True)
     # try load prosody probe artifact if present (research/artifacts/probe.pt)

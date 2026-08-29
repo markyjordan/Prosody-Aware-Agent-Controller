@@ -40,12 +40,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def setup_auth(app: FastAPI) -> None:
+def setup_auth(
+    app: FastAPI,
+    enabled: bool | None = None,
+    api_key: str | None = None,
+) -> None:
     # env: AUTH_ENABLED=1, API_KEY=...
     # also supports AUTH_API_KEY for explicit
-    enabled = os.getenv("AUTH_ENABLED", "0") in ("1", "true", "True")
-    api_key = os.getenv("AUTH_API_KEY") or os.getenv("API_KEY") or os.getenv("ELEVENLABS_API_KEY")
+    resolved_enabled = (
+        os.getenv("AUTH_ENABLED", "0") in ("1", "true", "True")
+        if enabled is None
+        else enabled
+    )
+    resolved_api_key = (
+        api_key
+        or os.getenv("AUTH_API_KEY")
+        or os.getenv("API_KEY")
+        or os.getenv("ELEVENLABS_API_KEY")
+    )
     # strip quotes if present
-    if api_key:
-        api_key = api_key.strip().strip('"').strip("'")
-    app.add_middleware(AuthMiddleware, enabled=enabled, api_key=api_key)
+    if resolved_api_key:
+        resolved_api_key = resolved_api_key.strip().strip('"').strip("'")
+    app.add_middleware(
+        AuthMiddleware,
+        enabled=resolved_enabled,
+        api_key=resolved_api_key,
+    )

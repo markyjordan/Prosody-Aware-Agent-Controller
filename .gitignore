@@ -5,3 +5,14 @@ dist/
 .DS_Store
 research/.conda
 research/**/__pycache__
+
+# Python/backend local state
+.env
+.env.local
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/

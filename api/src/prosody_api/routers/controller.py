@@ -33,7 +33,8 @@ async def condition(branch: str, req: ConditionRequest, request: Request):
 
         full_text = "".join(full_text_parts).strip()
         if full_text:
-            dependencies.task_spawner.spawn(prefetch, full_text)
+            prefetch_target = dependencies.tts.prefetch if dependencies.tts else prefetch
+            dependencies.task_spawner.spawn(prefetch_target, full_text)
 
     return StreamingResponse(
         caching_gen(),

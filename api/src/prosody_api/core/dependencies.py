@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from .config import Settings
-from ..ports import ConditionPromptBuilder, LLMPort
+from ..ports import ConditionPromptBuilder, LLMPort, TTSServicePort
 
 
 class Clock(Protocol):
@@ -51,3 +51,4 @@ class DependencyContainer:
     task_spawner: TaskSpawner = field(default_factory=ThreadTaskSpawner)
     llm: LLMPort | None = None
     condition_prompt_builder: ConditionPromptBuilder | None = None
+    tts: TTSServicePort | None = None

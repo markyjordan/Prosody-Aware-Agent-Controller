@@ -27,3 +27,16 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
 ]
+
+[tool.coverage.run]
+source = ["prosody_api"]
+omit = [
+    "src/prosody_api/routers/audio.py",
+    "src/prosody_api/services/aggregator.py",
+    "src/prosody_api/services/asr_service.py",
+    "src/prosody_api/services/audio_ingress.py",
+]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true

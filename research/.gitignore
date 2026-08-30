@@ -81,3 +81,34 @@ out/
 .tmp/
 tmp/
 logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local datasets. Keep the directory contract and its documentation.
+data/**
+!data/
+!data/README.md
+!data/**/
+!data/**/.gitkeep
+
+# Generated model artifacts. research/artifacts/probe.pt is a reserved local
+# API integration export and is intentionally not tracked.
+artifacts/**
+!artifacts/
+!artifacts/README.md
+!artifacts/**/
+!artifacts/**/.gitkeep
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+
+# Generated reports and local experiment runs.
+reports/figures/**
+reports/metrics/**
+reports/tensorboard/**
+!reports/figures/.gitkeep
+!reports/metrics/.gitkeep
+!reports/tensorboard/.gitkeep

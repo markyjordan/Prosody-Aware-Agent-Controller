@@ -1,7 +1,5 @@
 set positional-arguments
 
-env := "prosody-controller"
-
 # justfile config
 # lists all recipes so you can quickly discover available workflows.
 default: help
@@ -16,30 +14,34 @@ tree *args:
     @bash "{{justfile_directory()}}/scripts/dev/justfile/tree.sh" "$@"
 
 # project config
-# installs the project mamba environment.
+# creates or updates the project Mamba environment.
 bootstrap:
-  @bash "{{justfile_directory()}}/scripts/dev/justfile/bootstrap.sh"
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" bootstrap
 
 # updates the project mamba environment after adding/removing dependencies.
 update-env:
-  @env condarc="${mgc_condarc:-${condarc:-${xdg_config_home:-$home/.config}/conda/.condarc}}" mamba env update -n {{env}} -f "{{justfile_directory()}}/environment.yml" --prune
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" update-env
 
 # removes the project mamba environment from this machine.
 remove-env:
   @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" remove-env
 
+# prints the shell commands needed to activate the environment.
 activate:
-  @echo "run this in your shell:"
-  @echo '  eval "$(mamba shell hook --shell zsh)"'
-  @echo "  mamba activate {{env}}"
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" activate
 
+# prints the shell command needed to deactivate the environment.
 deactivate:
-  @echo "run this in your shell:"
-  @echo "  mamba deactivate"
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" deactivate
 
+# verifies core imports, a minimal audio transform, and local research tools.
+env-check:
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" env-check
+
+# starts JupyterLab rooted at research/.
 jupyter-lab *args:
-  @env condarc="${mgc_condarc:-${condarc:-${xdg_config_home:-$home/.config}/conda/.condarc}}" mamba run -n {{env}} jupyter lab --serverapp.root_dir="{{justfile_directory()}}" "$@"
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" run jupyter lab --ServerApp.root_dir="{{justfile_directory()}}" "$@"
 
-
-# ml
-
+# starts TensorBoard against the local generated-run directory.
+tensorboard *args:
+  @bash "{{justfile_directory()}}/scripts/dev/justfile/ml.sh" run tensorboard --logdir="{{justfile_directory()}}/reports/tensorboard" "$@"

@@ -1,0 +1,33 @@
+# Copy this file to a versioned experiment configuration after the target
+# schema and model family have been chosen. Null and empty values are
+# intentional: the scaffold does not promote mock application data into a
+# research contract.
+
+experiment:
+  name: null
+  seed: 42
+
+data:
+  source: null
+  audio_column: audio
+  target_columns: []
+  split_paths:
+    train: null
+    validation: null
+    test: null
+
+audio:
+  sample_rate_hz: 16000
+  mono: true
+
+model:
+  name: null
+
+runtime:
+  device: auto
+
+outputs:
+  checkpoints_dir: artifacts/checkpoints
+  exports_dir: artifacts/exports
+  metrics_dir: reports/metrics
+  tensorboard_dir: reports/tensorboard

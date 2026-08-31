@@ -16,6 +16,7 @@ dependencies:
 
   # Audio and tabular data handling.
   - "datasets>=4,<6"
+  - huggingface_hub
   - "numpy>=2,<3"
   - scipy
   - pandas

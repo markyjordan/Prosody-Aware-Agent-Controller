@@ -1,10 +1,11 @@
 # Prosody Research
 
-This directory is the source-free research scaffold for experiments that infer
-prosodic information from raw audio. It provides a reproducible Mamba
-environment, data and artifact boundaries, configuration placeholders, and
-local JupyterLab and TensorBoard workflows. It does not yet define model code,
-training code, notebooks, targets, losses, metrics, or an inference schema.
+This directory is the research scaffold for experiments that infer prosodic
+information from raw audio. It provides a reproducible Mamba environment, data
+and artifact boundaries, corpus acquisition, empty Model A and Model B pipeline
+modules, configuration placeholders, and local JupyterLab and TensorBoard
+workflows. It does not yet define model behavior, training behavior, notebooks,
+targets, losses, metrics, or an inference schema.
 
 ## Quickstart
 
@@ -41,9 +42,12 @@ recipes themselves use `mamba run`, so activation is optional.
   are ignored by Git.
 - `notebooks/` is for future exploration notebooks. No notebook is provided by
   this scaffold.
-- `src/prosody_research/` reserves future data, feature, model, training, and
-  inference boundaries without creating Python modules.
-- `tests/` reserves unit and integration test locations without adding tests.
+- `src/prosody_classifier/data/` acquires immutable source-corpus snapshots.
+- `src/prosody_classifier/model_a/` reserves the interpretable acoustic-feature
+  classifier pipeline.
+- `src/prosody_classifier/model_b/` reserves the frozen speech encoder and
+  linear-probe pipeline.
+- `tests/` owns unit and integration checks for implemented research behavior.
 - `artifacts/` owns generated checkpoints and exports. `artifacts/probe.pt` is
   reserved as the future API integration export and remains untracked.
 - `reports/` owns generated figures, metrics, and TensorBoard runs.
@@ -61,9 +65,26 @@ and acoustic values are not research requirements. Before implementing a model,
 define the target schema, labeling provenance, split strategy, evaluation
 metrics, and exported inference contract in a versioned experiment config.
 
-Hugging Face `datasets` is available for loading datasets, but this scaffold
-does not include Hub authentication, uploads, dataset cards, model cards, or
-publishing workflows.
+Hugging Face `datasets` remains available for future loading and transformation.
+Corpus acquisition uses public, revision-pinned source snapshots and does not
+include Hub authentication, uploads, dataset cards, model cards, or publishing
+workflows.
+
+## Corpus acquisition
+
+Acquire one immutable source snapshot, or all three supported corpora, from the
+research directory:
+
+```sh
+python src/prosody_classifier/data/acquire.py ravdess
+python src/prosody_classifier/data/acquire.py all
+```
+
+RAVDESS uses the official speech-only Zenodo archive. CREMA-D and TESS use
+revision-pinned Hugging Face dataset repositories. Downloads are written under
+`data/external/` with a manifest containing their source revision, license,
+sizes, and SHA-256 checksums. Acquisition does not extract, resample, split, or
+otherwise transform the source corpora.
 
 See [docs/pipeline.md](docs/pipeline.md) for the intended stage boundaries and
 data-leakage safeguards.

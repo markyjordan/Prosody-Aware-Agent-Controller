@@ -39,6 +39,10 @@ export default defineConfig({
         target: "ws://localhost:" + (process.env.MOCK_PORT ?? 8787),
         ws: true,
       },
+      "/api/tts": {
+        target: "http://localhost:" + (process.env.TTS_PORT ?? 8000),
+        changeOrigin: true,
+      },
       "/api": {
         target: "http://localhost:" + (process.env.MOCK_PORT ?? 8787),
         changeOrigin: true,

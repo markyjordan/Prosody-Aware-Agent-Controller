@@ -2,6 +2,9 @@ import { useState } from "react";
 import * as stylex from "@stylexjs/stylex";
 import { tokens } from "../styles/tokens.stylex";
 import type { BranchState } from "../state/store";
+import type { Branch } from "../protocol";
+import { Icon } from "./Icon";
+import { useTTS } from "../hooks/useTTS";
 
 const styles = stylex.create({
   gridDesktop: {
@@ -46,7 +49,7 @@ const styles = stylex.create({
     flexDirection: "column",
     marginTop: 14,
     width: "auto",
-    maxWidth: "88%",
+    maxWidth: "70%",
     alignSelf: "flex-start",
     borderRadius: 10,
     border: `1px solid ${tokens.border}`,
@@ -100,17 +103,66 @@ const styles = stylex.create({
     minWidth: 0,
     boxSizing: "border-box",
   },
+  ttsRow: {
+    display: "flex",
+    justifyContent: "flex-start",
+    marginTop: 10,
+  },
+  playBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: `1px solid ${tokens.border}`,
+    backgroundColor: tokens.surfaceHover,
+    color: tokens.textMuted,
+    transition: "border-color 0.15s, color 0.15s, opacity 0.15s",
+  },
+  playBtnEnabled: {
+    color: tokens.textPrimary,
+    ":hover": {
+      borderColor: tokens.accent,
+      color: tokens.accent,
+    },
+  },
+  playBtnDisabled: {
+    opacity: 0.45,
+    cursor: "default",
+  },
 });
 
 function Pane({
   label,
   state,
   tinted,
+  tts,
+  ttsKey,
+  turnId,
+  branch,
 }: {
   label: string;
   state: BranchState;
   tinted: "baseline" | "prosodic";
+  tts: ReturnType<typeof useTTS>;
+  ttsKey: string;
+  turnId: string;
+  branch: Branch;
 }) {
+  const hasText = Boolean(state.text);
+  const isActive = tts.activeKey === ttsKey;
+  const isLoading = isActive && tts.status === "loading";
+  const isPlaying = isActive && tts.status === "playing";
+  const icon = isLoading ? "progress_activity" : isPlaying ? "pause" : "play_arrow";
+  const title = !hasText
+    ? "no text to play yet"
+    : isLoading
+      ? "loading audio…"
+      : isPlaying
+        ? "pause"
+        : "play with ElevenLabs (Flash v2.5)";
+
   return (
     <div
       {...stylex.props(
@@ -121,11 +173,28 @@ function Pane({
       <div {...stylex.props(styles.labelRow)}>
         <span {...stylex.props(styles.label)}>{label}</span>
       </div>
-      {state.text ? (
+      {hasText ? (
         <span>{state.text}</span>
       ) : (
         <span {...stylex.props(styles.thinking)}>…</span>
       )}
+      <div {...stylex.props(styles.ttsRow)}>
+        <button
+          type="button"
+          aria-label={`play ${label} response`}
+          title={title}
+          disabled={!hasText || tts.status === "loading"}
+          onClick={() => {
+            void tts.play(state.text, ttsKey, { turnId, branch });
+          }}
+          {...stylex.props(
+            styles.playBtn,
+            hasText ? styles.playBtnEnabled : styles.playBtnDisabled,
+          )}
+        >
+          <Icon name={icon} size={16} fill={true} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -136,21 +205,39 @@ const TABS = [
 ];
 
 export function DualResponse({
+  turnId,
   baseline,
   prosodic,
 }: {
+  turnId: string;
   baseline: BranchState;
   prosodic: BranchState;
 }) {
   const [tab, setTab] = useState<"baseline" | "prosodic">("baseline");
   const branches = { baseline, prosodic };
   const active = branches[tab];
+  const tts = useTTS();
+  const mobileKey = `mobile-${tab}`;
+  const isMobileLoading = tts.activeKey === mobileKey && tts.status === "loading";
+  const isMobilePlaying = tts.activeKey === mobileKey && tts.status === "playing";
+  const mobileIcon = isMobileLoading
+    ? "progress_activity"
+    : isMobilePlaying
+      ? "pause"
+      : "play_arrow";
+  const mobileTitle = !active.text
+    ? "no text to play yet"
+    : isMobileLoading
+      ? "loading audio…"
+      : isMobilePlaying
+        ? "pause"
+        : "play with ElevenLabs (Flash v2.5)";
 
   return (
     <>
       <div {...stylex.props(styles.gridDesktop)}>
-        <Pane label="Text Only" state={baseline} tinted="baseline" />
-        <Pane label="Prosody-Aware" state={prosodic} tinted="prosodic" />
+        <Pane label="Text Only" state={baseline} tinted="baseline" tts={tts} ttsKey="desktop-baseline" turnId={turnId} branch="baseline" />
+        <Pane label="Prosody-Aware" state={prosodic} tinted="prosodic" tts={tts} ttsKey="desktop-prosodic" turnId={turnId} branch="prosodic" />
       </div>
       <div
         {...stylex.props(
@@ -178,6 +265,23 @@ export function DualResponse({
           ) : (
             <span {...stylex.props(styles.thinking)}>…</span>
           )}
+          <div {...stylex.props(styles.ttsRow)}>
+            <button
+              type="button"
+              aria-label={`play ${tab} response`}
+              title={mobileTitle}
+              disabled={!active.text || tts.status === "loading"}
+              onClick={() => {
+                void tts.play(active.text, mobileKey, { turnId, branch: tab });
+              }}
+              {...stylex.props(
+                styles.playBtn,
+                active.text ? styles.playBtnEnabled : styles.playBtnDisabled,
+              )}
+            >
+              <Icon name={mobileIcon} size={16} fill={true} />
+            </button>
+          </div>
         </div>
       </div>
     </>

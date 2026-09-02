@@ -23,32 +23,62 @@ export type Branch = z.infer<typeof branchSchema>;
 export const clientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("session.init"),
+    protocolVersion: z.literal(1),
     sampleRate: z.number(),
     codec: z.literal("pcm16"),
     scenario: z.string().optional(),
   }),
-  z.object({ type: z.literal("utterance.begin") }),
-  z.object({ type: z.literal("audio.delta"), data: z.string() }),
-  z.object({ type: z.literal("utterance.end") }),
+  z.object({ type: z.literal("utterance.begin"), turnId: z.string() }),
+  z.object({
+    type: z.literal("audio.delta"),
+    turnId: z.string(),
+    sequence: z.number().int().nonnegative(),
+    data: z.string(),
+  }),
+  z.object({ type: z.literal("utterance.end"), turnId: z.string() }),
 ]);
 
 export type ClientEvent = z.infer<typeof clientEventSchema>;
 
 export const serverEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("asr.partial"), text: z.string() }),
-  z.object({ type: z.literal("prosody.update"), prosody: prosodySchema }),
   z.object({
-    type: z.literal("asr.final"),
-    text: z.string(),
+    type: z.literal("session.ready"),
+    sessionId: z.string(),
+    protocolVersion: z.literal(1),
+  }),
+  z.object({ type: z.literal("asr.partial"), turnId: z.string(), text: z.string() }),
+  z.object({
+    type: z.literal("prosody.update"),
+    turnId: z.string(),
     prosody: prosodySchema,
   }),
   z.object({
+    type: z.literal("asr.final"),
+    turnId: z.string(),
+    text: z.string(),
+    prosody: prosodySchema.optional(),
+  }),
+  z.object({
     type: z.literal("response.delta"),
+    turnId: z.string(),
     branch: branchSchema,
     text: z.string(),
   }),
-  z.object({ type: z.literal("response.done"), branch: branchSchema }),
-  z.object({ type: z.literal("error"), code: z.string(), message: z.string() }),
+  z.object({ type: z.literal("response.done"), turnId: z.string(), branch: branchSchema }),
+  z.object({
+    type: z.literal("turn.profile"),
+    turnId: z.string(),
+    profile: z.record(z.string(), z.unknown()),
+  }),
+  z.object({
+    type: z.literal("error"),
+    code: z.string(),
+    message: z.string(),
+    turnId: z.string().optional(),
+    stage: z.string().optional(),
+    branch: branchSchema.optional(),
+    retryable: z.boolean().optional(),
+  }),
 ]);
 
 export type ServerEvent = z.infer<typeof serverEventSchema>;

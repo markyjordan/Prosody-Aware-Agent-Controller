@@ -1,12 +1,11 @@
 import * as stylex from "@stylexjs/stylex";
 import { tokens, lightTheme, WAVE_COLORS } from "./styles/tokens.stylex";
 import { useSessionStore } from "./state/store";
+import { ClearButton } from "./components/ClearButton";
 import { Header } from "./components/Header";
 import { MicButton } from "./components/MicButton";
-import { ModeToggle } from "./components/ModeToggle";
 import { ScenarioSelect } from "./components/ScenarioSelect";
 import { SimulateButton } from "./components/SimulateButton";
-import { TrialLog } from "./components/TrialLog";
 import { TrialStage } from "./components/TrialStage";
 import { Waveform } from "./components/Waveform";
 import { useRecorder } from "./hooks/useRecorder";
@@ -123,8 +122,7 @@ function statusText(
 
 export default function App() {
   const recorder = useRecorder({
-    onChunk: (base64Pcm16) =>
-      session.send({ type: "audio.delta", data: base64Pcm16 }),
+    onChunk: (base64Pcm16) => session.sendAudio(base64Pcm16),
   });
   const { conn, statusLine } = useSession();
 
@@ -152,11 +150,10 @@ export default function App() {
         <TrialStage />
       </main>
       <footer {...stylex.props(styles.composer)}>
-        <TrialLog />
         <div {...stylex.props(styles.composerRow)}>
           <SimulateButton />
           <ScenarioSelect />
-          <ModeToggle />
+          <ClearButton />
           {MIC_ENABLED ? (
             <>
               <MicButton recorder={recorder} />

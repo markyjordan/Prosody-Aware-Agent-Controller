@@ -6,7 +6,7 @@ import type { RecorderApi } from "./useRecorder";
 export function usePtt(recorder: RecorderApi) {
   const begin = useCallback(() => {
     const s = useSessionStore.getState();
-    if (s.conn !== "connected" || s.liveTrialId || s.recording) return;
+    if (s.conn !== "connected" || s.liveTrialId || s.recording || s.ttsActive) return;
     s.setStatusLine("");
     void recorder.start()
       .then((started) => {
@@ -14,11 +14,11 @@ export function usePtt(recorder: RecorderApi) {
         const st = useSessionStore.getState();
         if (st.conn !== "connected") {
           recorder.stop();
-          session.send({ type: "utterance.end" });
           return;
         }
-        st.beginTrial();
-        session.send({ type: "utterance.begin" });
+        if (!session.beginTurn()) {
+          recorder.stop();
+        }
       })
       .catch((err: unknown) => {
         console.error("recorder failed to start:", err);
@@ -30,7 +30,7 @@ export function usePtt(recorder: RecorderApi) {
     const s = useSessionStore.getState();
     if (s.recording) {
       recorder.stop();
-      session.send({ type: "utterance.end" });
+      session.endTurn();
     } else {
       recorder.cancel();
     }

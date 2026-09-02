@@ -19,7 +19,7 @@ export const tokens = stylex.defineVars({
 });
 
 export const lightTheme = stylex.createTheme(tokens, {
-  bg: "#f4f6fb",
+  bg: "#e8ecf5",
   surface: "#ffffff",
   surfaceHover: "#eceff7",
   border: "#dce1ec",

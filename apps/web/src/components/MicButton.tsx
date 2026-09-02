@@ -53,12 +53,13 @@ const styles = stylex.create({
 export function MicButton({ recorder }: { recorder: RecorderApi }) {
   const conn = useSessionStore((s) => s.conn);
   const recording = useSessionStore((s) => s.recording);
+  const ttsActive = useSessionStore((s) => s.ttsActive);
   const pttMode = useSessionStore((s) => s.pttMode);
   const liveTrialId = useSessionStore((s) => s.liveTrialId);
   const setPttMode = useSessionStore((s) => s.setPttMode);
 
   const { begin, end } = usePtt(recorder);
-  const busy = conn !== "connected" || liveTrialId !== null;
+  const busy = conn !== "connected" || liveTrialId !== null || ttsActive;
   const disabled = busy && !recording;
 
   return (

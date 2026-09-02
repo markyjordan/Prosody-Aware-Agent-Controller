@@ -47,18 +47,11 @@ function handleCondition(req, res) {
     try {
       payload = JSON.parse(raw);
     } catch {}
-    const history = Array.isArray(payload.history) ? payload.history : [];
-    const priorUsers = history.filter((m) => m.role === "user").length;
-
     const MIN_AUDIO_BYTES = 1600;
     const noAudio = !payload.turn?.transcript && branch === undefined;
 
     const sc = scenarioById(payload.scenario);
-    const base = branch === "prosodic" ? sc.prosodic : sc.baseline;
-    const reply =
-      priorUsers > 0
-        ? `${base} (${branch}: continuing from turn ${priorUsers + 1})`
-        : base;
+    const reply = branch === "prosodic" ? sc.prosodic : sc.baseline;
 
     streamSSE(res, reply, {
       error:
@@ -86,6 +79,10 @@ export function startServer(port = 8787) {
   wss.on("connection", (ws) => {
     let scenarioId = null;
     let bytesReceived = 0;
+    let activeTurnId = null;
+    let nextSequence = 0;
+    const usedTurnIds = new Set();
+    const sessionId = crypto.randomUUID();
 
     const send = (obj) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
@@ -102,38 +99,71 @@ export function startServer(port = 8787) {
         case "session.init":
           scenarioId = evt.scenario ?? null;
           bytesReceived = 0;
+          send({ type: "session.ready", sessionId, protocolVersion: 1 });
           break;
         case "utterance.begin":
+          if (!evt.turnId || activeTurnId || usedTurnIds.has(evt.turnId)) {
+            send({
+              type: "error",
+              code: "invalid_turn",
+              message: "turnId must be unique and no turn may already be active",
+              turnId: evt.turnId,
+              stage: "ingress",
+              retryable: false,
+            });
+            break;
+          }
+          activeTurnId = evt.turnId;
+          usedTurnIds.add(evt.turnId);
           bytesReceived = 0;
+          nextSequence = 0;
           break;
         case "audio.delta":
+          if (evt.turnId !== activeTurnId || evt.sequence !== nextSequence) {
+            send({
+              type: "error",
+              code: "out_of_order_audio",
+              message: `expected sequence ${nextSequence}`,
+              turnId: evt.turnId,
+              stage: "ingress",
+              retryable: false,
+            });
+            activeTurnId = null;
+            break;
+          }
+          nextSequence += 1;
           bytesReceived += Buffer.byteLength(evt.data ?? "", "base64");
           break;
         case "utterance.end":
-          void playTranscription(bytesReceived, scenarioId);
+          if (evt.turnId === activeTurnId) {
+            activeTurnId = null;
+            void playTurn(evt.turnId, bytesReceived, scenarioId);
+          }
           break;
         default:
           break;
       }
     });
 
-    async function playTranscription(bytes, scenId) {
+    async function playTurn(turnId, bytes, scenId) {
       const sc = scenarioById(scenId);
       const speechSecs = Math.min(2.5, Math.max(0.4, bytes / 2 / 16000));
       const words = tokenize(sc.utterance);
 
       for (let i = 1; i <= words.length; i++) {
-        send({ type: "asr.partial", text: words.slice(0, i).join("") });
+        send({ type: "asr.partial", turnId, text: words.slice(0, i).join("") });
         await sleep(Math.min(220, (speechSecs * 1000) / words.length));
       }
       await sleep(120);
 
       send({
         type: "prosody.update",
+        turnId,
         prosody: { labels: [], features: sc.features },
       });
       send({
         type: "asr.final",
+        turnId,
         text: sc.utterance,
         prosody: {
           labels: sc.labels,
@@ -141,6 +171,39 @@ export function startServer(port = 8787) {
           confidence: sc.confidence,
         },
       });
+
+      const started = performance.now();
+      await Promise.all([
+        streamBranch(turnId, "baseline", sc.baseline),
+        streamBranch(turnId, "prosodic", sc.prosodic),
+      ]);
+      const total = performance.now() - started;
+      send({
+        type: "turn.profile",
+        turnId,
+        profile: {
+          schema_version: 1,
+          kind: "turn",
+          session_id: sessionId,
+          turn_id: turnId,
+          outcome: "ok",
+          providers: { asr: "mock", llm: "mock" },
+          durations_ms: {
+            asr_commit: 120,
+            prosody_finalize: 40,
+            release_to_first_text: 180,
+            release_to_done: Math.round(total),
+          },
+        },
+      });
+    }
+
+    async function streamBranch(turnId, branch, text) {
+      for (const token of tokenize(text)) {
+        send({ type: "response.delta", turnId, branch, text: token });
+        await sleep(25);
+      }
+      send({ type: "response.done", turnId, branch });
     }
   });
 

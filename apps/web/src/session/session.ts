@@ -4,34 +4,77 @@ import {
   type ServerEvent,
 } from "../protocol";
 import { useSessionStore } from "../state/store";
-import { dispatchTurn } from "./fanout";
 
 const MAX_BACKOFF_MS = 5000;
-const OUTBOX_CAP = 400;
 
-function dispatch(evt: ServerEvent) {
-  const s = useSessionStore.getState();
+interface ClientMarks {
+  released?: number;
+  asrFinal?: number;
+  firstDelta?: number;
+  done?: number;
+}
+
+function dispatch(evt: ServerEvent, marks: Map<string, ClientMarks>) {
+  const store = useSessionStore.getState();
   switch (evt.type) {
+    case "session.ready":
+      store.setSessionId(evt.sessionId);
+      break;
     case "asr.partial":
-      s.beginTrial();
-      useSessionStore.getState().applyPartial(evt.text);
+      store.applyPartial(evt.turnId, evt.text);
       break;
     case "prosody.update":
-      s.beginTrial();
-      useSessionStore.getState().applyProsody(evt.prosody);
+      store.applyProsody(evt.turnId, evt.prosody);
       break;
-    case "asr.final":
-      useSessionStore.getState().finalize(evt.text, evt.prosody);
-      void dispatchTurn(evt.text, evt.prosody);
+    case "asr.final": {
+      const client = marks.get(evt.turnId) ?? {};
+      client.asrFinal = performance.now();
+      marks.set(evt.turnId, client);
+      store.finalize(evt.turnId, evt.text, evt.prosody);
       break;
-    case "response.delta":
-      useSessionStore.getState().appendDelta(evt.branch, evt.text);
+    }
+    case "response.delta": {
+      const client = marks.get(evt.turnId) ?? {};
+      client.firstDelta ??= performance.now();
+      marks.set(evt.turnId, client);
+      store.appendDelta(evt.turnId, evt.branch, evt.text);
       break;
-    case "response.done":
-      useSessionStore.getState().completeBranch(evt.branch);
+    }
+    case "response.done": {
+      const client = marks.get(evt.turnId) ?? {};
+      client.done = performance.now();
+      marks.set(evt.turnId, client);
+      store.completeBranch(evt.turnId, evt.branch);
       break;
+    }
+    case "turn.profile": {
+      const client = marks.get(evt.turnId);
+      const clientDurations = client?.released
+        ? {
+            release_to_asr_final_ms: client.asrFinal
+              ? client.asrFinal - client.released
+              : null,
+            release_to_first_text_ms: client.firstDelta
+              ? client.firstDelta - client.released
+              : null,
+            release_to_last_done_ms: client.done
+              ? client.done - client.released
+              : null,
+          }
+        : {};
+      store.applyProfile(evt.turnId, {
+        ...evt.profile,
+        client_durations_ms: clientDurations,
+      });
+      marks.delete(evt.turnId);
+      break;
+    }
     case "error":
-      useSessionStore.getState().failActive(evt.message);
+      if (evt.turnId && evt.branch) {
+        store.failBranch(evt.turnId, evt.branch, evt.message);
+      } else {
+        store.failActive(`error: ${evt.message}`);
+      }
       break;
   }
 }
@@ -43,7 +86,9 @@ class SessionController {
   private attempt = 0;
   private url = "";
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private outbox: ClientEvent[] = [];
+  private activeTurnId: string | null = null;
+  private sequence = 0;
+  private marks = new Map<string, ClientMarks>();
 
   connect(url: string) {
     this.url = url;
@@ -57,42 +102,63 @@ class SessionController {
     const ws = this.ws;
     this.ws = null;
     ws?.close();
+    useSessionStore.getState().setSessionId(null);
     useSessionStore.getState().setConn("disconnected");
   }
 
   reinit() {
     this.send({
       type: "session.init",
+      protocolVersion: 1,
       sampleRate: 16000,
       codec: "pcm16",
       scenario: useSessionStore.getState().scenario,
     });
   }
 
-  send(evt: ClientEvent) {
+  beginTurn(): string | null {
+    if (this.ws?.readyState !== WebSocket.OPEN || this.activeTurnId) return null;
+    const turnId = crypto.randomUUID();
+    this.activeTurnId = turnId;
+    this.sequence = 0;
+    this.marks.set(turnId, {});
+    useSessionStore.getState().beginTrial(turnId);
+    this.send({ type: "utterance.begin", turnId });
+    return turnId;
+  }
+
+  sendAudio(data: string) {
+    if (!this.activeTurnId || this.ws?.readyState !== WebSocket.OPEN) return;
+    this.send({
+      type: "audio.delta",
+      turnId: this.activeTurnId,
+      sequence: this.sequence++,
+      data,
+    });
+  }
+
+  endTurn() {
+    const turnId = this.activeTurnId;
+    if (!turnId) return;
+    const client = this.marks.get(turnId) ?? {};
+    client.released = performance.now();
+    this.marks.set(turnId, client);
+    this.send({ type: "utterance.end", turnId });
+    this.activeTurnId = null;
+  }
+
+  private send(evt: ClientEvent) {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.transmit(evt);
-      return;
+      this.ws.send(JSON.stringify(evt));
     }
-    if (!this.desired) return;
-    if (
-      evt.type === "audio.delta" &&
-      this.outbox.length >= OUTBOX_CAP
-    ) {
-      const idx = this.outbox.findIndex((e) => e.type === "audio.delta");
-      if (idx >= 0) this.outbox.splice(idx, 1);
-    }
-    if (this.outbox.length < OUTBOX_CAP) this.outbox.push(evt);
   }
 
-  private transmit(evt: ClientEvent) {
-    this.ws?.send(JSON.stringify(evt));
-  }
-
-  private flushOutbox() {
-    const queued = this.outbox;
-    this.outbox = [];
-    for (const evt of queued) this.transmit(evt);
+  private invalidateActive(message: string) {
+    if (!this.activeTurnId) return;
+    this.activeTurnId = null;
+    this.sequence = 0;
+    useSessionStore.getState().setRecording(false);
+    useSessionStore.getState().failActive(message);
   }
 
   private clearRetry() {
@@ -125,7 +191,6 @@ class SessionController {
       this.attempt = 0;
       useSessionStore.getState().setConn("connected");
       this.reinit();
-      this.flushOutbox();
     };
 
     ws.onmessage = (e) => {
@@ -141,13 +206,15 @@ class SessionController {
         console.warn("dropping malformed server event", result.error.issues);
         return;
       }
-      dispatch(result.data);
+      dispatch(result.data, this.marks);
     };
 
     ws.onclose = () => {
       if (gen !== this.gen) return;
       this.ws = null;
+      useSessionStore.getState().setSessionId(null);
       useSessionStore.getState().setConn("disconnected");
+      this.invalidateActive("error: connection lost during utterance");
       if (this.desired) {
         this.attempt += 1;
         const delay = Math.min(1000 * 2 ** this.attempt, MAX_BACKOFF_MS);
@@ -158,9 +225,7 @@ class SessionController {
       }
     };
 
-    ws.onerror = () => {
-      ws.close();
-    };
+    ws.onerror = () => ws.close();
   }
 }
 

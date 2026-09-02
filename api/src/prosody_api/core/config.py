@@ -23,6 +23,13 @@ def _clean(value: str | None) -> str | None:
     return value.strip().strip('"').strip("'").strip()
 
 
+def _optional_path(value: str | None, default: Path) -> Path | None:
+    cleaned = _clean(value)
+    if cleaned and cleaned.lower() in {"off", "none", "disabled"}:
+        return None
+    return Path(cleaned) if cleaned else default
+
+
 @dataclass(frozen=True)
 class Settings:
     elevenlabs_api_key: str | None
@@ -37,6 +44,11 @@ class Settings:
     rate_limit_enabled: bool
     rate_limit: int
     rate_window: int
+    asr_model: str = "scribe_v2_realtime"
+    openai_reasoning_effort: str = "none"
+    openai_max_output_tokens: int = 256
+    latency_profile_path: Path | None = None
+    prosody_timeout_seconds: float = 2.0
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -47,7 +59,7 @@ class Settings:
             voice_id=_clean(os.getenv("ELEVENLABS_VOICE_ID"))
             or "cgSgspJ2msm6clMCkdW9",
             model_id=_clean(os.getenv("ELEVENLABS_MODEL_ID")) or "eleven_v3",
-            openai_model=_clean(os.getenv("OPENAI_MODEL")) or "gpt-4o-mini",
+            openai_model=_clean(os.getenv("OPENAI_MODEL")) or "gpt-5.6-luna",
             probe_path=Path(
                 _clean(os.getenv("PROBE_PATH"))
                 or api_dir / "src" / "prosody_api" / "prosody" / "weights" / "probe.pt"
@@ -65,6 +77,16 @@ class Settings:
             not in ("0", "false", "False"),
             rate_limit=int(os.getenv("RATE_LIMIT", "60")),
             rate_window=int(os.getenv("RATE_WINDOW", "60")),
+            asr_model=_clean(os.getenv("ELEVENLABS_ASR_MODEL"))
+            or "scribe_v2_realtime",
+            openai_reasoning_effort=_clean(os.getenv("OPENAI_REASONING_EFFORT"))
+            or "none",
+            openai_max_output_tokens=int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "256")),
+            latency_profile_path=_optional_path(
+                os.getenv("LATENCY_PROFILE_PATH"),
+                api_dir / ".cache" / "latency" / "turns.jsonl",
+            ),
+            prosody_timeout_seconds=float(os.getenv("PROSODY_TIMEOUT_SECONDS", "2.0")),
         )
 
     def __getitem__(self, key: str) -> Any:

@@ -9,6 +9,7 @@ from .middleware.error import setup_error_handlers
 from .middleware.logging import setup_logging
 from .middleware.rate_limiting import setup_rate_limiting
 from .routers.controller import router as controller_router
+from .routers.audio import router as audio_router
 from .routers.prosody import router as prosody_router
 from .routers.tts import router as tts_router
 from .schemas import HealthResponse
@@ -57,7 +58,7 @@ def create_app(
     app.include_router(tts_router)
     app.include_router(prosody_router)
     app.include_router(controller_router)
-    # The audio WebSocket stays unmounted until its pipeline is implemented.
+    app.include_router(audio_router)
     return app
 
 

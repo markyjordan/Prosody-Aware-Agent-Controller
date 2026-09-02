@@ -1,19 +1,18 @@
 """
-LLM inference — OpenAI streaming per branch
+LLM inference — OpenAI Responses streaming per branch.
 
-Called from routers/controller.py after aggregator + controller produce baseline/conditioned prompts.
-Streams deltas as SSE text/event-stream (like mock/server.mjs streamSSE).
+Used by both the compatibility condition SSE routes and the unified audio
+WebSocket orchestrator through the same injectable LLM port.
 """
-import os
-from typing import AsyncIterator, Iterator
+from typing import AsyncIterator
 
 from ..core.config import get_settings
 
 # lazy import openai
 try:
-    from openai import OpenAI  # type: ignore
+    from openai import AsyncOpenAI  # type: ignore
 except ImportError:
-    OpenAI = None  # type: ignore
+    AsyncOpenAI = None  # type: ignore
 
 
 def _get_client():
@@ -21,9 +20,9 @@ def _get_client():
     key = settings["openai_api_key"]
     if not key:
         return None
-    if OpenAI is None:
+    if AsyncOpenAI is None:
         return None
-    return OpenAI(api_key=key)
+    return AsyncOpenAI(api_key=key)
 
 
 async def stream_llm(prompt: str) -> AsyncIterator[str]:
@@ -35,14 +34,13 @@ async def stream_llm(prompt: str) -> AsyncIterator[str]:
         for w in (prompt[:80] + " (mock LLM)").split():
             yield w + " "
         return
-    # real OpenAI streaming
-    # TODO: choose model from config
-    stream = client.chat.completions.create(
+    async with client.responses.stream(
         model=settings["openai_model"],
-        messages=[{"role": "user", "content": prompt}],
-        stream=True,
-    )
-    for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            yield delta
+        input=prompt,
+        reasoning={"effort": settings["openai_reasoning_effort"]},
+        max_output_tokens=settings["openai_max_output_tokens"],
+        store=False,
+    ) as stream:
+        async for event in stream:
+            if event.type == "response.output_text.delta" and event.delta:
+                yield event.delta

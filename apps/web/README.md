@@ -45,8 +45,18 @@ client-side.
 | Audio capture | `src/hooks/useRecorder.ts` + `public/recorder-worklet.js` | AudioWorklet → PCM16 mono @16 kHz, ~100 ms chunks |
 | Mock backend | `mock/server.mjs`, `mock/scenarios.mjs` | executable spec; canned A/B scenarios |
 
-The frontend is deliberately a dumb pipe + renderer: ASR, prosody extraction, and
-LLM inference all belong to the backend. Point it at a real backend with
+Every turn has a client-generated `turnId`. The backend streams ASR partials,
+the final model-neutral prosody result, both policy branches, and a privacy-safe
+latency profile over the same WebSocket. The UI shows release-to-first-text,
+ASR commit, and completion timings below each finished trial.
+
+TTS remains user-selected. Each branch play control requests ElevenLabs Flash
+v2.5 through `/api/tts`; supported browsers append the MP3 response to a
+`MediaSource` for early playback and other browsers retain buffered playback.
+
+The frontend is deliberately a dumb pipe + renderer: ASR, prosody extraction,
+parallel A/B LLM inference, histories, and provider credentials all belong to
+the backend. Point it at a real backend with
 `VITE_WS_URL=ws://host:port npm run dev` (or `NO_MOCK=1` to skip spawning the
 mock alongside vite).
 

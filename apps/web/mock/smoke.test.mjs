@@ -6,9 +6,10 @@ startServer(PORT);
 
 const base = `http://localhost:${PORT}`;
 
-// --- 1. voice ws: transcription + prosody only ---
+// --- 1. unified voice ws: transcription + prosody + A/B + profile ---
 const ws = new WebSocket(`ws://localhost:${PORT}`);
 const seen = new Set();
+const TURN_ID = "smoke-turn-1";
 
 const phase1 = new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error("ws timeout")), 10000);
@@ -16,22 +17,33 @@ const phase1 = new Promise((resolve, reject) => {
     ws.send(
       JSON.stringify({
         type: "session.init",
+        protocolVersion: 1,
         sampleRate: 16000,
         codec: "pcm16",
         scenario: "uncertain-yes",
       }),
     );
-    ws.send(JSON.stringify({ type: "utterance.begin" }));
+    ws.send(JSON.stringify({ type: "utterance.begin", turnId: TURN_ID }));
     const chunk = Buffer.from(new Int16Array(16000).buffer).toString("base64");
     for (let i = 0; i < 16; i++) {
-      ws.send(JSON.stringify({ type: "audio.delta", data: chunk }));
+      ws.send(
+        JSON.stringify({
+          type: "audio.delta",
+          turnId: TURN_ID,
+          sequence: i,
+          data: chunk,
+        }),
+      );
     }
-    setTimeout(() => ws.send(JSON.stringify({ type: "utterance.end" })), 200);
+    setTimeout(
+      () => ws.send(JSON.stringify({ type: "utterance.end", turnId: TURN_ID })),
+      200,
+    );
   });
   ws.on("message", (raw) => {
     const evt = JSON.parse(raw.toString());
     seen.add(evt.type);
-    if (evt.type === "asr.final") {
+    if (evt.type === "turn.profile") {
       clearTimeout(t);
       resolve(evt);
     }
@@ -39,21 +51,19 @@ const phase1 = new Promise((resolve, reject) => {
   ws.on("error", reject);
 });
 
-const finalEvt = await phase1;
-console.log("transcript:", JSON.stringify(finalEvt.text));
-console.log(
-  "prosody:",
-  finalEvt.prosody.labels.join(", "),
-  "| conf:",
-  finalEvt.prosody.confidence,
-);
+const profileEvt = await phase1;
+console.log("profile:", JSON.stringify(profileEvt.profile.durations_ms));
 
-if (!seen.has("asr.partial") || !seen.has("prosody.update")) {
+if (
+  !seen.has("session.ready") ||
+  !seen.has("asr.partial") ||
+  !seen.has("asr.final") ||
+  !seen.has("prosody.update") ||
+  !seen.has("response.delta") ||
+  !seen.has("response.done") ||
+  !seen.has("turn.profile")
+) {
   console.error("MISSING voice events:", [...seen]);
-  process.exit(1);
-}
-if (seen.has("response.delta")) {
-  console.error("responses must NOT arrive over voice ws in v2");
   process.exit(1);
 }
 
@@ -91,7 +101,7 @@ const [baseline, prosodic] = await Promise.all([
 console.log("[baseline]", baseline.text);
 console.log("[prosodic]", prosodic.text);
 
-// --- 3. multi-turn: history grows, mock acknowledges turn number ---
+// --- 3. multi-turn: history accepted without polluting text ---
 const history = [
   { id: "1", role: "user", content: "Sure." },
   { id: "2", role: "assistant", content: baseline.text },
@@ -105,7 +115,9 @@ if (
   !baseline.doneSeen ||
   !prosodic.doneSeen ||
   !second.doneSeen ||
-  !/turn 2/.test(second.text)
+  /turn \d/.test(second.text) ||
+  /\(baseline:/.test(second.text) ||
+  /\(prosodic:/.test(second.text)
 ) {
   console.error("SMOKE FAIL");
   process.exit(1);

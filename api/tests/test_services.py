@@ -62,35 +62,59 @@ def test_llm_provider_free_fallback(monkeypatch):
 
 
 def test_llm_provider_stream_uses_model_and_skips_empty_deltas(monkeypatch):
-    class Completions:
-        def create(self, **kwargs):
-            self.kwargs = kwargs
-            choice = lambda content: type(
-                "Choice", (), {"delta": type("Delta", (), {"content": content})()}
-            )()
-            return [
-                type("Chunk", (), {"choices": [choice(None)]})(),
-                type("Chunk", (), {"choices": [choice("hello")]})(),
-            ]
+    class Stream:
+        def __init__(self):
+            self.events = iter(
+                [
+                    type("Event", (), {"type": "response.created"})(),
+                    type(
+                        "Event",
+                        (),
+                        {"type": "response.output_text.delta", "delta": "hello"},
+                    )(),
+                ]
+            )
 
-    completions = Completions()
-    client = type(
-        "Client",
-        (),
-        {"chat": type("Chat", (), {"completions": completions})()},
-    )()
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self.events)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    class Responses:
+        def stream(self, **kwargs):
+            self.kwargs = kwargs
+            return Stream()
+
+    responses = Responses()
+    client = type("Client", (), {"responses": responses})()
     monkeypatch.setattr(llm_service, "_get_client", lambda: client)
     monkeypatch.setattr(
         llm_service,
         "get_settings",
-        lambda: {"openai_model": "chosen-model"},
+        lambda: {
+            "openai_model": "chosen-model",
+            "openai_reasoning_effort": "none",
+            "openai_max_output_tokens": 256,
+        },
     )
 
     assert collect_async(llm_service.stream_llm("prompt")) == ["hello"]
-    assert completions.kwargs == {
+    assert responses.kwargs == {
         "model": "chosen-model",
-        "messages": [{"role": "user", "content": "prompt"}],
-        "stream": True,
+        "input": "prompt",
+        "reasoning": {"effort": "none"},
+        "max_output_tokens": 256,
+        "store": False,
     }
 
 
@@ -101,6 +125,11 @@ def test_settings_cleaning_defaults_and_environment(monkeypatch, tmp_path):
         "ELEVENLABS_VOICE_ID",
         "ELEVENLABS_MODEL_ID",
         "OPENAI_MODEL",
+        "OPENAI_REASONING_EFFORT",
+        "OPENAI_MAX_OUTPUT_TOKENS",
+        "ELEVENLABS_ASR_MODEL",
+        "LATENCY_PROFILE_PATH",
+        "PROSODY_TIMEOUT_SECONDS",
         "PROBE_PATH",
         "TTS_CACHE_DIR",
     ):
@@ -112,7 +141,8 @@ def test_settings_cleaning_defaults_and_environment(monkeypatch, tmp_path):
     assert defaults["openai_api_key"] is None
     assert defaults["voice_id"] == "cgSgspJ2msm6clMCkdW9"
     assert defaults["model_id"] == "eleven_v3"
-    assert defaults["openai_model"] == "gpt-4o-mini"
+    assert defaults["openai_model"] == "gpt-5.6-luna"
+    assert defaults["openai_reasoning_effort"] == "none"
 
     monkeypatch.setenv("OPENAI_API_KEY", ' "openai" ')
     monkeypatch.setenv("ELEVENLABS_API_KEY", "'eleven'")
@@ -125,6 +155,10 @@ def test_settings_cleaning_defaults_and_environment(monkeypatch, tmp_path):
     assert configured["elevenlabs_api_key"] == "eleven"
     assert configured["probe_path"] == tmp_path / "probe.pt"
     assert configured["cache_dir"] == tmp_path / "cache"
+
+    monkeypatch.setenv("LATENCY_PROFILE_PATH", "off")
+    config.get_settings.cache_clear()
+    assert config.get_settings()["latency_profile_path"] is None
     config.get_settings.cache_clear()
 
 

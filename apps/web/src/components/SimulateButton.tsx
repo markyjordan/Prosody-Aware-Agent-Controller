@@ -31,8 +31,9 @@ export function SimulateButton() {
   const { simulate, busy } = useSimulate();
   const liveTrialId = useSessionStore((s) => s.liveTrialId);
   const conn = useSessionStore((s) => s.conn);
+  const ttsActive = useSessionStore((s) => s.ttsActive);
   const disabled =
-    busy || liveTrialId !== null || conn !== "connected";
+    busy || liveTrialId !== null || conn !== "connected" || ttsActive;
 
   return (
     <button

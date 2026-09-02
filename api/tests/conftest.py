@@ -16,6 +16,7 @@ os.environ["AUTH_ENABLED"] = "0"
 os.environ["RATE_LIMIT_ENABLED"] = "1"
 os.environ["RATE_LIMIT"] = "60"
 os.environ["RATE_WINDOW"] = "60"
+os.environ["LATENCY_PROFILE_PATH"] = "off"
 
 from prosody_api.app import app  # noqa: E402
 

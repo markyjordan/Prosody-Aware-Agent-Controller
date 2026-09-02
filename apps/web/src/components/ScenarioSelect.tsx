@@ -34,11 +34,15 @@ const styles = stylex.create({
 export function ScenarioSelect() {
   const scenario = useSessionStore((s) => s.scenario);
   const setScenario = useSessionStore((s) => s.setScenario);
+  const busy = useSessionStore(
+    (s) => s.liveTrialId !== null || s.recording || s.ttsActive,
+  );
 
   return (
     <select
       {...stylex.props(styles.select)}
       value={scenario}
+      disabled={busy}
       onChange={(e) => {
         setScenario(e.target.value);
         session.reinit();

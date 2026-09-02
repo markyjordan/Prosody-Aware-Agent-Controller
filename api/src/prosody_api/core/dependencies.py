@@ -7,8 +7,10 @@ from typing import Any, Protocol
 
 from .config import Settings
 from ..ports import (
+    ASRProviderPort,
     ConditionPromptBuilder,
     LLMPort,
+    LatencySinkPort,
     ProsodyPredictorPort,
     TTSServicePort,
 )
@@ -60,3 +62,5 @@ class DependencyContainer:
     tts: TTSServicePort | None = None
     prosody_predictor: ProsodyPredictorPort | None = None
     prosody_artifacts: ProsodyArtifactLocator | None = None
+    asr: ASRProviderPort | None = None
+    latency_sink: LatencySinkPort | None = None

@@ -34,21 +34,29 @@ export function useSimulate() {
 
   const simulate = useCallback(async () => {
     const s = useSessionStore.getState();
-    if (s.conn !== "connected" || s.liveTrialId || s.recording || busy) {
+    if (
+      s.conn !== "connected" ||
+      s.liveTrialId ||
+      s.recording ||
+      s.ttsActive ||
+      busy
+    ) {
       return;
     }
     setBusy(true);
     s.setStatusLine("");
-    s.beginTrial();
-    session.send({ type: "utterance.begin" });
+    if (!session.beginTurn()) {
+      setBusy(false);
+      return;
+    }
     const chunk = synthChunk();
     try {
       for (let i = 0; i < CHUNK_COUNT; i++) {
-        session.send({ type: "audio.delta", data: chunk });
+        session.sendAudio(chunk);
         await sleep(CHUNK_INTERVAL_MS);
       }
     } finally {
-      session.send({ type: "utterance.end" });
+      session.endTurn();
       setBusy(false);
     }
   }, [busy]);

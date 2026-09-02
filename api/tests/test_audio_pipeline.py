@@ -11,10 +11,10 @@ from prosody_api.schemas import Prosody
 def settings(tmp_path):
     return Settings(
         elevenlabs_api_key=None,
-        openai_api_key=None,
+        groq_api_key=None,
         voice_id="voice",
         model_id="eleven_flash_v2_5",
-        openai_model="gpt-5.6-luna",
+        groq_model="qwen/qwen3.8-27b",
         probe_path=tmp_path / "probe.pt",
         cache_dir=tmp_path / "cache",
         auth_enabled=False,

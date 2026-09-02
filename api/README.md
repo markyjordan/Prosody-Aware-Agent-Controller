@@ -1,7 +1,7 @@
 # Prosody API
 
 FastAPI backend for the prosody comparison client. It owns the half-duplex
-audio session, ElevenLabs ASR/TTS providers, prosody inference, parallel OpenAI
+audio session, ElevenLabs ASR/TTS providers, prosody inference, parallel Groq
 policy branches, compatibility HTTP routes, and latency profiling.
 
 ## Architecture
@@ -31,8 +31,8 @@ Transport responsibilities stay at the router boundary:
 
 The browser sends PCM16 mono audio at 16 kHz through one persistent WebSocket.
 Mic release manually commits Scribe v2 Realtime. ASR completion and prosody
-finalization form a join barrier before the baseline and prosodic OpenAI
-Responses streams start concurrently.
+finalization form a join barrier before the baseline and prosodic Groq Chat
+Completions streams start concurrently.
 
 ## Local server
 
@@ -50,9 +50,10 @@ take precedence, followed by those files in the listed order.
 
 Important variables include:
 
-- `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5.6-luna`),
-  `OPENAI_REASONING_EFFORT` (default `none`), and
-  `OPENAI_MAX_OUTPUT_TOKENS`
+- `GROQ_API_KEY`, `GROQ_MODEL` (default `qwen/qwen3.8-27b`),
+  `GROQ_REASONING_EFFORT` (default `default`),
+  `GROQ_MAX_COMPLETION_TOKENS` (default `2048`),
+  `GROQ_TEMPERATURE` (default `0.6`), and `GROQ_TOP_P` (default `0.95`)
 - `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and `ELEVENLABS_MODEL_ID`
 - `ELEVENLABS_ASR_MODEL` (default `scribe_v2_realtime`)
 - `PROBE_PATH` and `TTS_CACHE_DIR`
@@ -60,7 +61,7 @@ Important variables include:
 - `AUTH_ENABLED`, `AUTH_API_KEY`, and `API_KEY`
 - `RATE_LIMIT_ENABLED`, `RATE_LIMIT`, and `RATE_WINDOW`
 
-Without an OpenAI key, condition requests stream deterministic mock tokens.
+Without a Groq key, condition requests stream deterministic mock tokens.
 Prosody prediction uses fixed heuristic features until a real artifact is
 wired. An uncached TTS request requires an ElevenLabs key.
 

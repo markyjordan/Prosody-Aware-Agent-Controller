@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Protocol
 
@@ -41,3 +41,24 @@ class TTSServicePort(Protocol):
 
 class ProsodyPredictorPort(Protocol):
     def predict(self, request: ProsodyRequest) -> Prosody: ...
+
+
+PartialTranscriptHandler = Callable[[str], Awaitable[None]]
+
+
+class ASRSessionPort(Protocol):
+    async def send(self, audio_b64: str) -> None: ...
+
+    async def commit(self) -> str: ...
+
+    async def close(self) -> None: ...
+
+
+class ASRProviderPort(Protocol):
+    async def open(
+        self, on_partial: PartialTranscriptHandler
+    ) -> ASRSessionPort: ...
+
+
+class LatencySinkPort(Protocol):
+    def append(self, record: dict) -> None: ...

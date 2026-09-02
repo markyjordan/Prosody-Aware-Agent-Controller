@@ -20,6 +20,9 @@ class TTSRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
     voice_id: str = Field(default="cgSgspJ2msm6clMCkdW9")
     model_id: str = Field(default="eleven_v3")
+    session_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    branch: Optional[str] = None
 
 
 class HealthResponse(BaseModel):

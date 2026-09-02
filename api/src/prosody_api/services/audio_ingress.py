@@ -16,7 +16,7 @@ class AudioBuffer:
     def push(self, b64_data: str):
         import base64
 
-        raw = base64.b64decode(b64_data)
+        raw = base64.b64decode(b64_data, validate=True)
         self.chunks.append(raw)
         self.total_bytes += len(raw)
 

@@ -1,16 +1,46 @@
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from ..schemas import TTSRequest
-from ..services.tts_service import synthesize_stream, get_cached_audio, get_eleven_client
-from ..core.config import get_settings
+from ..services.latency import JsonlLatencySink
+from ..services.tts_service import get_cached_audio, get_eleven_client, synthesize_stream
 
 router = APIRouter()
 
 
 @router.post("/api/tts")
 def tts(req: TTSRequest, request: Request):
-    tts_service = request.app.state.dependencies.tts
+    dependencies = request.app.state.dependencies
+    tts_service = dependencies.tts
+    started = dependencies.clock.monotonic()
+    sink = dependencies.latency_sink or JsonlLatencySink(
+        dependencies.settings.latency_profile_path
+    )
+
+    def profile(outcome: str, cached: bool, first_byte=None):
+        finished = dependencies.clock.monotonic()
+        sink.append(
+            {
+                "schema_version": 1,
+                "kind": "tts",
+                "session_id": req.session_id,
+                "turn_id": req.turn_id,
+                "branch": req.branch,
+                "outcome": outcome,
+                "provider": "elevenlabs",
+                "model": req.model_id,
+                "cached": cached,
+                "durations_ms": {
+                    "backend_total": round((finished - started) * 1000, 3),
+                    "provider_first_byte": (
+                        round((first_byte - started) * 1000, 3)
+                        if first_byte is not None
+                        else 0.0 if cached else None
+                    ),
+                },
+            }
+        )
+
     text = req.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="text must not be empty")
@@ -21,6 +51,7 @@ def tts(req: TTSRequest, request: Request):
         else get_cached_audio(req.voice_id, req.model_id, text)
     )
     if cached:
+        profile("ok", True)
         return FileResponse(
             path=str(cached),
             media_type="audio/mpeg",
@@ -36,8 +67,23 @@ def tts(req: TTSRequest, request: Request):
         except HTTPException:
             raise
         audio_iter = synthesize_stream(req.voice_id, req.model_id, text)
+
+    def profiled_audio():
+        first_byte = None
+        outcome = "ok"
+        try:
+            for chunk in audio_iter:
+                if chunk and first_byte is None:
+                    first_byte = dependencies.clock.monotonic()
+                yield chunk
+        except Exception:
+            outcome = "failed"
+            raise
+        finally:
+            profile(outcome, False, first_byte)
+
     return StreamingResponse(
-        audio_iter,
+        profiled_audio(),
         media_type="audio/mpeg",
         headers={
             "Cache-Control": "no-store",

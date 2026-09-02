@@ -113,11 +113,20 @@ class FakeProsodyPredictor:
         return Prosody(labels=["injected"], confidence=0.8)
 
 
+class FakeLatencySink:
+    def __init__(self):
+        self.records = []
+
+    def append(self, record):
+        self.records.append(record)
+
+
 def test_create_app_uses_injected_ports_and_infrastructure(tmp_path):
     llm = FakeLLM("injected ", "response")
     tasks = FakeTaskSpawner()
     tts = FakeTTS()
     prosody = FakeProsodyPredictor()
+    latency = FakeLatencySink()
     dependencies = DependencyContainer(
         settings=make_settings(tmp_path),
         clock=FakeClock(),
@@ -130,6 +139,7 @@ def test_create_app_uses_injected_ports_and_infrastructure(tmp_path):
         ),
         tts=tts,
         prosody_predictor=prosody,
+        latency_sink=latency,
     )
     app = create_app(dependencies=dependencies)
 
@@ -140,7 +150,14 @@ def test_create_app_uses_injected_ports_and_infrastructure(tmp_path):
         )
         audio = client.post(
             "/api/tts",
-            json={"text": "speak", "voice_id": "voice", "model_id": "model"},
+            json={
+                "text": "speak",
+                "voice_id": "voice",
+                "model_id": "model",
+                "session_id": "session",
+                "turn_id": "turn",
+                "branch": "prosodic",
+            },
         )
         prediction = client.post("/api/prosody", json={"text": "listen"})
 
@@ -156,6 +173,24 @@ def test_create_app_uses_injected_ports_and_infrastructure(tmp_path):
     assert len(tasks.calls) == 1
     assert audio.content == b"fake-audio"
     assert tts.synthesis == [("voice", "model", "speak")]
+    assert len(latency.records) == 1
+    tts_profile = latency.records[0]
+    assert {key: tts_profile[key] for key in tts_profile if key != "durations_ms"} == {
+        "schema_version": 1,
+        "kind": "tts",
+        "session_id": "session",
+        "turn_id": "turn",
+        "branch": "prosodic",
+        "outcome": "ok",
+        "provider": "elevenlabs",
+        "model": "model",
+        "cached": False,
+    }
+    assert 0 < tts_profile["durations_ms"]["provider_first_byte"]
+    assert (
+        tts_profile["durations_ms"]["provider_first_byte"]
+        < tts_profile["durations_ms"]["backend_total"]
+    )
     assert prediction.json() == {
         "labels": ["injected"],
         "features": None,
@@ -364,11 +399,11 @@ def test_llm_client_creation_respects_key_and_optional_dependency(monkeypatch):
     )
     monkeypatch.setattr(
         llm_service,
-        "OpenAI",
+        "AsyncOpenAI",
         lambda api_key: calls.append(api_key) or object(),
     )
     assert llm_service._get_client() is not None
     assert calls == ["key"]
 
-    monkeypatch.setattr(llm_service, "OpenAI", None)
+    monkeypatch.setattr(llm_service, "AsyncOpenAI", None)
     assert llm_service._get_client() is None

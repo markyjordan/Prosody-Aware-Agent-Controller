@@ -60,7 +60,9 @@ export function useTTS() {
         stop();
         return;
       }
-      if (useSessionStore.getState().ttsActive) return;
+      const state = useSessionStore.getState();
+      if (state.ttsActive || state.starting || state.recording ||
+          state.processing || state.liveTrialId) return;
       stop();
       setError(null);
       setStatus("loading");

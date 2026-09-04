@@ -4,16 +4,14 @@ import { useSessionStore } from "./state/store";
 import { ClearButton } from "./components/ClearButton";
 import { Header } from "./components/Header";
 import { MicButton } from "./components/MicButton";
-import { ScenarioSelect } from "./components/ScenarioSelect";
-import { SimulateButton } from "./components/SimulateButton";
+// import { ScenarioSelect } from "./components/ScenarioSelect";
+// import { SimulateButton } from "./components/SimulateButton";
 import { TrialStage } from "./components/TrialStage";
-import { Waveform } from "./components/Waveform";
+import { RealtimeWaveform } from "./components/RealtimeWaveform";
 import { useRecorder } from "./hooks/useRecorder";
 import { useSession } from "./hooks/useSession";
 import { session } from "./session/session";
 import type { ConnState, TrialStatus } from "./state/store";
-
-const MIC_ENABLED = import.meta.env.VITE_MIC === "1";
 
 const styles = stylex.create({
   root: {
@@ -100,7 +98,7 @@ const CONN_LABEL: Record<ConnState, string> = {
 function statusText(
   conn: ConnState,
   turnStatus: TrialStatus | null,
-  micEnabled: boolean,
+  mode: "hold" | "toggle",
 ): string {
   if (conn === "disconnected") return "disconnected — retrying…";
   if (conn === "connecting") return "connecting…";
@@ -114,9 +112,9 @@ function statusText(
     case "error":
       return "error";
     default:
-      return micEnabled
+      return mode === "hold"
         ? "hold the mic — or Space — and speak"
-        : "press simulate to run the selected scenario through the wire protocol";
+        : "click the mic — or press Space — to start and stop";
   }
 }
 
@@ -134,11 +132,20 @@ export default function App() {
   const turnStatus =
     liveTrial && liveTrial.status !== "complete" ? liveTrial.status : null;
   const recording = useSessionStore((s) => s.recording);
+  const starting = useSessionStore((s) => s.starting);
+  const processing = useSessionStore((s) => s.processing);
+  const sessionId = useSessionStore((s) => s.sessionId);
+  const pttMode = useSessionStore((s) => s.pttMode);
   const theme = useSessionStore((s) => s.theme);
 
   const line =
     statusLine ||
-    statusText(conn, recording ? "listening" : turnStatus, MIC_ENABLED);
+    (starting ? (pttMode === "hold"
+      ? "requesting microphone… release to cancel"
+      : "requesting microphone… click the mic to cancel") :
+      conn === "connected" && !sessionId ? "waiting for audio session…" :
+      processing && !turnStatus ? "finishing response…" :
+      statusText(conn, recording ? "listening" : turnStatus, pttMode));
   const isError = statusLine.startsWith("error:");
 
   return (
@@ -151,15 +158,13 @@ export default function App() {
       </main>
       <footer {...stylex.props(styles.composer)}>
         <div {...stylex.props(styles.composerRow)}>
+          {/* Simulation entry points retained for future development:
           <SimulateButton />
           <ScenarioSelect />
+          */}
+          <MicButton recorder={recorder} />
+          <RealtimeWaveform recorder={recorder} colors={WAVE_COLORS[theme]} />
           <ClearButton />
-          {MIC_ENABLED ? (
-            <>
-              <MicButton recorder={recorder} />
-              <Waveform recorder={recorder} colors={WAVE_COLORS[theme]} />
-            </>
-          ) : null}
         </div>
         <div {...stylex.props(styles.statusRow)}>
           <span

@@ -53,7 +53,7 @@ def test_llm_provider_free_fallback(monkeypatch):
     monkeypatch.setattr(
         llm_service,
         "get_settings",
-        lambda: {"openai_model": "unused"},
+        lambda: {},
     )
 
     deltas = collect_async(llm_service.stream_llm("one two"))
@@ -64,69 +64,94 @@ def test_llm_provider_free_fallback(monkeypatch):
 def test_llm_provider_stream_uses_model_and_skips_empty_deltas(monkeypatch):
     class Stream:
         def __init__(self):
-            self.events = iter(
+            self.chunks = iter(
                 [
-                    type("Event", (), {"type": "response.created"})(),
                     type(
-                        "Event",
+                        "Chunk",
                         (),
-                        {"type": "response.output_text.delta", "delta": "hello"},
+                        {
+                            "choices": [
+                                type(
+                                    "Choice",
+                                    (),
+                                    {"delta": type("Delta", (), {"content": None})()},
+                                )()
+                            ]
+                        },
+                    )(),
+                    type(
+                        "Chunk",
+                        (),
+                        {
+                            "choices": [
+                                type(
+                                    "Choice",
+                                    (),
+                                    {"delta": type("Delta", (), {"content": "hello"})()},
+                                )()
+                            ]
+                        },
                     )(),
                 ]
             )
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
 
         def __aiter__(self):
             return self
 
         async def __anext__(self):
             try:
-                return next(self.events)
+                return next(self.chunks)
             except StopIteration:
                 raise StopAsyncIteration
 
-    class Responses:
-        def stream(self, **kwargs):
+    class Completions:
+        async def create(self, **kwargs):
             self.kwargs = kwargs
             return Stream()
 
-    responses = Responses()
-    client = type("Client", (), {"responses": responses})()
+    completions = Completions()
+    client = type(
+        "Client",
+        (),
+        {"chat": type("Chat", (), {"completions": completions})()},
+    )()
     monkeypatch.setattr(llm_service, "_get_client", lambda: client)
     monkeypatch.setattr(
         llm_service,
         "get_settings",
         lambda: {
-            "openai_model": "chosen-model",
-            "openai_reasoning_effort": "none",
-            "openai_max_output_tokens": 256,
+            "groq_model": "chosen-model",
+            "groq_temperature": 0.6,
+            "groq_max_completion_tokens": 2048,
+            "groq_top_p": 0.95,
+            "groq_reasoning_effort": "default",
         },
     )
 
     assert collect_async(llm_service.stream_llm("prompt")) == ["hello"]
-    assert responses.kwargs == {
+    assert completions.kwargs == {
         "model": "chosen-model",
-        "input": "prompt",
-        "reasoning": {"effort": "none"},
-        "max_output_tokens": 256,
-        "store": False,
+        "messages": [{"role": "user", "content": "prompt"}],
+        "temperature": 0.6,
+        "max_completion_tokens": 2048,
+        "top_p": 0.95,
+        "reasoning_effort": "default",
+        "stream": True,
+        "stop": None,
     }
 
 
 def test_settings_cleaning_defaults_and_environment(monkeypatch, tmp_path):
     for key in (
         "ELEVENLABS_API_KEY",
-        "OPENAI_API_KEY",
+        "GROQ_API_KEY",
         "ELEVENLABS_VOICE_ID",
         "ELEVENLABS_MODEL_ID",
-        "OPENAI_MODEL",
-        "OPENAI_REASONING_EFFORT",
-        "OPENAI_MAX_OUTPUT_TOKENS",
+        "GROQ_MODEL",
+        "GROQ_REASONING_EFFORT",
+        "GROQ_MAX_COMPLETION_TOKENS",
+        "GROQ_TEMPERATURE",
+        "GROQ_TOP_P",
         "ELEVENLABS_ASR_MODEL",
         "LATENCY_PROFILE_PATH",
         "PROSODY_TIMEOUT_SECONDS",
@@ -138,20 +163,23 @@ def test_settings_cleaning_defaults_and_environment(monkeypatch, tmp_path):
 
     defaults = config.get_settings()
     assert defaults["elevenlabs_api_key"] is None
-    assert defaults["openai_api_key"] is None
+    assert defaults["groq_api_key"] is None
     assert defaults["voice_id"] == "cgSgspJ2msm6clMCkdW9"
     assert defaults["model_id"] == "eleven_v3"
-    assert defaults["openai_model"] == "gpt-5.6-luna"
-    assert defaults["openai_reasoning_effort"] == "none"
+    assert defaults["groq_model"] == "qwen/qwen3.8-27b"
+    assert defaults["groq_reasoning_effort"] == "default"
+    assert defaults["groq_max_completion_tokens"] == 2048
+    assert defaults["groq_temperature"] == 0.6
+    assert defaults["groq_top_p"] == 0.95
 
-    monkeypatch.setenv("OPENAI_API_KEY", ' "openai" ')
+    monkeypatch.setenv("GROQ_API_KEY", ' "groq" ')
     monkeypatch.setenv("ELEVENLABS_API_KEY", "'eleven'")
     monkeypatch.setenv("PROBE_PATH", str(tmp_path / "probe.pt"))
     monkeypatch.setenv("TTS_CACHE_DIR", str(tmp_path / "cache"))
     config.get_settings.cache_clear()
     configured = config.get_settings()
 
-    assert configured["openai_api_key"] == "openai"
+    assert configured["groq_api_key"] == "groq"
     assert configured["elevenlabs_api_key"] == "eleven"
     assert configured["probe_path"] == tmp_path / "probe.pt"
     assert configured["cache_dir"] == tmp_path / "cache"

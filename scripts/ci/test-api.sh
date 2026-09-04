@@ -9,7 +9,7 @@ export API_KEY=""
 export AUTH_API_KEY=""
 export AUTH_ENABLED="0"
 export ELEVENLABS_API_KEY=""
-export OPENAI_API_KEY=""
+export GROQ_API_KEY=""
 export LATENCY_PROFILE_PATH="off"
 
 cd "${api_dir}"

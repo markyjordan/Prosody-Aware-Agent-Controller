@@ -28,10 +28,10 @@ from prosody_api.services.tts_service import (
 def make_settings(tmp_path, **overrides):
     values = {
         "elevenlabs_api_key": None,
-        "openai_api_key": None,
+        "groq_api_key": None,
         "voice_id": "default-voice",
         "model_id": "default-model",
-        "openai_model": "default-llm",
+        "groq_model": "default-llm",
         "probe_path": tmp_path / "probe.pt",
         "cache_dir": tmp_path / "cache",
         "auth_enabled": False,
@@ -395,15 +395,15 @@ def test_llm_client_creation_respects_key_and_optional_dependency(monkeypatch):
     monkeypatch.setattr(
         llm_service,
         "get_settings",
-        lambda: {"openai_api_key": "key"},
+        lambda: {"groq_api_key": "key"},
     )
     monkeypatch.setattr(
         llm_service,
-        "AsyncOpenAI",
+        "AsyncGroq",
         lambda api_key: calls.append(api_key) or object(),
     )
     assert llm_service._get_client() is not None
     assert calls == ["key"]
 
-    monkeypatch.setattr(llm_service, "AsyncOpenAI", None)
+    monkeypatch.setattr(llm_service, "AsyncGroq", None)
     assert llm_service._get_client() is None

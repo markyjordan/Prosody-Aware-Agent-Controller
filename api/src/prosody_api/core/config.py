@@ -33,10 +33,10 @@ def _optional_path(value: str | None, default: Path) -> Path | None:
 @dataclass(frozen=True)
 class Settings:
     elevenlabs_api_key: str | None
-    openai_api_key: str | None
+    groq_api_key: str | None
     voice_id: str
     model_id: str
-    openai_model: str
+    groq_model: str
     probe_path: Path
     cache_dir: Path
     auth_enabled: bool
@@ -45,8 +45,10 @@ class Settings:
     rate_limit: int
     rate_window: int
     asr_model: str = "scribe_v2_realtime"
-    openai_reasoning_effort: str = "none"
-    openai_max_output_tokens: int = 256
+    groq_reasoning_effort: str = "default"
+    groq_max_completion_tokens: int = 2048
+    groq_temperature: float = 0.6
+    groq_top_p: float = 0.95
     latency_profile_path: Path | None = None
     prosody_timeout_seconds: float = 2.0
 
@@ -55,11 +57,11 @@ class Settings:
         elevenlabs_api_key = _clean(os.getenv("ELEVENLABS_API_KEY"))
         return cls(
             elevenlabs_api_key=elevenlabs_api_key,
-            openai_api_key=_clean(os.getenv("OPENAI_API_KEY")),
+            groq_api_key=_clean(os.getenv("GROQ_API_KEY")),
             voice_id=_clean(os.getenv("ELEVENLABS_VOICE_ID"))
             or "cgSgspJ2msm6clMCkdW9",
             model_id=_clean(os.getenv("ELEVENLABS_MODEL_ID")) or "eleven_v3",
-            openai_model=_clean(os.getenv("OPENAI_MODEL")) or "gpt-5.6-luna",
+            groq_model=_clean(os.getenv("GROQ_MODEL")) or "qwen/qwen3.8-27b",
             probe_path=Path(
                 _clean(os.getenv("PROBE_PATH"))
                 or api_dir / "src" / "prosody_api" / "prosody" / "weights" / "probe.pt"
@@ -79,9 +81,13 @@ class Settings:
             rate_window=int(os.getenv("RATE_WINDOW", "60")),
             asr_model=_clean(os.getenv("ELEVENLABS_ASR_MODEL"))
             or "scribe_v2_realtime",
-            openai_reasoning_effort=_clean(os.getenv("OPENAI_REASONING_EFFORT"))
-            or "none",
-            openai_max_output_tokens=int(os.getenv("OPENAI_MAX_OUTPUT_TOKENS", "256")),
+            groq_reasoning_effort=_clean(os.getenv("GROQ_REASONING_EFFORT"))
+            or "default",
+            groq_max_completion_tokens=int(
+                os.getenv("GROQ_MAX_COMPLETION_TOKENS", "2048")
+            ),
+            groq_temperature=float(os.getenv("GROQ_TEMPERATURE", "0.6")),
+            groq_top_p=float(os.getenv("GROQ_TOP_P", "0.95")),
             latency_profile_path=_optional_path(
                 os.getenv("LATENCY_PROFILE_PATH"),
                 api_dir / ".cache" / "latency" / "turns.jsonl",

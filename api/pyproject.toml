@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "elevenlabs>=2.65.0",
     "fastapi>=0.141.1",
-    "openai>=3.5.0",
+    "groq>=0.31.0",
     "python-dotenv>=1.2.3",
     "uvicorn>=0.52.4",
 ]

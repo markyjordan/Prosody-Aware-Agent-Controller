@@ -43,7 +43,7 @@ def _profile_record(trace: TurnTrace, dependencies, outcome: str) -> dict:
     llm_provider = (
         "injected"
         if dependencies.llm is not None
-        else "openai" if dependencies.settings.openai_api_key else "mock"
+        else "groq" if dependencies.settings.groq_api_key else "mock"
     )
     branch_timings = {}
     for branch in ("baseline", "prosodic"):
@@ -63,8 +63,8 @@ def _profile_record(trace: TurnTrace, dependencies, outcome: str) -> dict:
             "asr": asr_provider,
             "asr_model": dependencies.settings.asr_model,
             "llm": llm_provider,
-            "llm_model": dependencies.settings.openai_model,
-            "reasoning_effort": dependencies.settings.openai_reasoning_effort,
+            "llm_model": dependencies.settings.groq_model,
+            "reasoning_effort": dependencies.settings.groq_reasoning_effort,
         },
         "durations_ms": {
             "client_flush_to_dispatch": trace.ms("last_audio", "mic_released"),
@@ -174,7 +174,7 @@ async def ws_audio(ws: WebSocket):
                     }
                 )
             if not parts:
-                raise RuntimeError("OpenAI returned no response text")
+                raise RuntimeError("Groq returned no response text")
             turn.trace.mark(f"{branch}_done")
             await send(
                 {"type": "response.done", "turnId": turn.turn_id, "branch": branch}

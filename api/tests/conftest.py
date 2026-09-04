@@ -8,7 +8,7 @@ for credential in (
     "API_KEY",
     "AUTH_API_KEY",
     "ELEVENLABS_API_KEY",
-    "OPENAI_API_KEY",
+    "GROQ_API_KEY",
 ):
     os.environ[credential] = ""
 

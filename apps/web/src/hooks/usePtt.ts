@@ -1,75 +1,75 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { session } from "../session/session";
 import { useSessionStore } from "../state/store";
 import type { RecorderApi } from "./useRecorder";
 
 export function usePtt(recorder: RecorderApi) {
+  const ending = useRef(false);
   const begin = useCallback(() => {
     const s = useSessionStore.getState();
-    if (s.conn !== "connected" || s.liveTrialId || s.recording || s.ttsActive) return;
+    if (!s.sessionId || s.conn !== "connected" || s.liveTrialId || s.starting ||
+        s.recording || s.processing || s.ttsActive || ending.current) return;
     s.setStatusLine("");
-    void recorder.start()
-      .then((started) => {
-        if (!started) return;
-        const st = useSessionStore.getState();
-        if (st.conn !== "connected") {
-          recorder.stop();
-          return;
-        }
-        if (!session.beginTurn()) {
-          recorder.stop();
-        }
-      })
-      .catch((err: unknown) => {
-        console.error("recorder failed to start:", err);
-        useSessionStore.getState().failActive(micErrorMessage(err));
-      });
+    void recorder.start().then((started) => {
+      if (!started) return;
+      if (!session.beginTurn()) recorder.cancel();
+    }).catch((error: unknown) => {
+      useSessionStore.getState().failActive(`error: ${micErrorMessage(error)}`);
+    });
   }, [recorder]);
 
   const end = useCallback(() => {
-    const s = useSessionStore.getState();
-    if (s.recording) {
-      recorder.stop();
-      session.endTurn();
-    } else {
-      recorder.cancel();
-    }
+    if (ending.current) return;
+    if (!useSessionStore.getState().recording) { recorder.cancel(); return; }
+    ending.current = true;
+    void recorder.stop().then(() => session.endTurn()).finally(() => {
+      ending.current = false;
+    });
   }, [recorder]);
 
   useEffect(() => {
+    let spaceHeld = false;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || e.repeat || isTypingTarget(e.target)) return;
+      if (e.code !== "Space" || e.repeat || isInteractiveTarget(e.target)) return;
       e.preventDefault();
-      const mode = useSessionStore.getState().pttMode;
-      if (mode === "hold") {
-        begin();
-      } else if (useSessionStore.getState().recording) {
-        end();
-      } else {
-        begin();
-      }
+      spaceHeld = true;
+      const state = useSessionStore.getState();
+      if (state.pttMode === "toggle" && (state.recording || state.starting)) end();
+      else begin();
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || isTypingTarget(e.target)) return;
-      const mode = useSessionStore.getState().pttMode;
-      if (mode === "hold") end();
+      if (e.code !== "Space" || !spaceHeld) return;
+      spaceHeld = false;
+      e.preventDefault();
+      if (useSessionStore.getState().pttMode === "hold") end();
     };
+    const onBlur = () => { spaceHeld = false; end(); };
+    const onVisibility = () => { if (document.hidden) onBlur(); };
+    const unsubscribe = useSessionStore.subscribe((state, previous) => {
+      if ((previous.sessionId && !state.sessionId) ||
+          (previous.conn === "connected" && state.conn !== "connected")) recorder.cancel();
+      if (previous.liveTrialId && !state.liveTrialId && state.recording) recorder.cancel();
+    });
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      unsubscribe();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVisibility);
+      recorder.cancel();
     };
-  }, [begin, end]);
-
+  }, [begin, end, recorder]);
   return { begin, end };
 }
 
-function isTypingTarget(t: EventTarget | null): boolean {
-  return (
-    t instanceof HTMLElement &&
-    ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)
-  );
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(
+    'input, textarea, select, button, a[href], [contenteditable]:not([contenteditable="false"]), [role="button"], [role="textbox"], [role="combobox"], [role="slider"], [role="switch"], [role="checkbox"], [role="tab"], [tabindex]',
+  ));
 }
 
 function micErrorMessage(err: unknown): string {

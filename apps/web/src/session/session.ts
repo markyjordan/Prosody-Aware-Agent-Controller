@@ -116,7 +116,9 @@ export class SessionController {
       protocolVersion: 1,
       sampleRate: 16000,
       codec: "pcm16",
-      scenario: useSessionStore.getState().scenario,
+      ...(import.meta.env.VITE_USE_MOCK === "1"
+        ? { scenario: useSessionStore.getState().scenario }
+        : {}),
     });
   }
 

@@ -2,8 +2,12 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import stylex from "@stylexjs/unplugin";
 
+const useMock = process.env.USE_MOCK === "1";
+const apiPort = process.env.API_PORT ?? 8000;
+const mockPort = process.env.MOCK_PORT ?? 8787;
+
 async function startMockServer() {
-  if (process.env.NO_MOCK) return;
+  if (!useMock || process.env.NO_MOCK === "1") return;
   try {
     const { startServer } = await import("./mock/server.mjs");
     startServer(Number(process.env.MOCK_PORT ?? 8787));
@@ -24,6 +28,7 @@ const mockPlugin = {
 };
 
 export default defineConfig({
+  define: { "import.meta.env.VITE_USE_MOCK": JSON.stringify(useMock ? "1" : "0") },
   plugins: [
     stylex.vite({
       useCSSLayers: true,
@@ -36,15 +41,15 @@ export default defineConfig({
   server: {
     proxy: {
       "/ws": {
-        target: "ws://localhost:" + (process.env.MOCK_PORT ?? 8787),
+        target: "ws://localhost:" + (useMock ? mockPort : apiPort),
         ws: true,
       },
       "/api/tts": {
-        target: "http://localhost:" + (process.env.TTS_PORT ?? 8000),
+        target: "http://localhost:" + (process.env.TTS_PORT ?? apiPort),
         changeOrigin: true,
       },
       "/api": {
-        target: "http://localhost:" + (process.env.MOCK_PORT ?? 8787),
+        target: "http://localhost:" + (useMock ? mockPort : apiPort),
         changeOrigin: true,
       },
     },

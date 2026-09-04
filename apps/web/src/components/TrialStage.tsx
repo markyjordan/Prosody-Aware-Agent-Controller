@@ -163,8 +163,7 @@ export function TrialStage() {
         </span>
         <span>no trials yet</span>
         <span>
-          pick a scenario and press simulate — or plug in a microphone with
-          VITE_MIC=1
+          hold the mic button or Space to start a trial
         </span>
       </div>
     );

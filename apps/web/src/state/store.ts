@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { randomOpener } from "./openers";
 import type { Branch, Prosody } from "../protocol";
 import type { ThemeMode } from "../styles/tokens.stylex";
 
@@ -32,6 +33,7 @@ export interface BranchState {
 
 export interface Trial {
   id: string;
+  readonly opener: string;
   partialText: string;
   text: string;
   prosody?: Prosody;
@@ -42,9 +44,10 @@ export interface Trial {
   prosodic: BranchState;
 }
 
-function newTrial(id: string): Trial {
+function newTrial(id: string, opener: string): Trial {
   return {
     id,
+    opener,
     partialText: "",
     text: "",
     status: "listening",
@@ -65,6 +68,7 @@ interface SessionStore {
   statusLine: string;
   theme: ThemeMode;
   trials: Trial[];
+  pendingOpener: string;
   liveTrialId: string | null;
   inspectId: string | null;
 
@@ -122,6 +126,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   statusLine: "",
   theme: initialTheme(),
   trials: [],
+  pendingOpener: randomOpener(),
   liveTrialId: null,
   inspectId: null,
 
@@ -162,7 +167,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (current) return current;
     const id = turnId ?? crypto.randomUUID();
     set((s) => ({
-      trials: [...s.trials, newTrial(id)],
+      trials: [...s.trials, newTrial(id, s.pendingOpener)],
       liveTrialId: id,
       inspectId: null,
     }));
@@ -205,19 +210,19 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   completeBranch: (turnId, branch) =>
     set((s) => {
+      if (s.liveTrialId !== turnId) return s;
       const trials = mapLive(s.trials, turnId, (t) => ({
         ...t,
         [branch]: { ...t[branch], done: true },
       }));
       const live = trials.find((t) => t.id === turnId);
-      let liveTrialId = s.liveTrialId;
       if (live && live.baseline.done && live.prosodic.done) {
-        liveTrialId = null;
         return {
           trials: trials.map((t) =>
             t.id === live.id ? { ...t, status: "complete" as const } : t,
           ),
-          liveTrialId,
+          liveTrialId: null,
+          pendingOpener: randomOpener(),
         };
       }
       return { trials };
@@ -247,31 +252,30 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     })),
 
   failActive: (message) =>
-    set((s) => {
-      const trials = s.trials.filter((t) => {
-        if (t.id !== s.liveTrialId) return true;
-        return t.text !== "" || t.partialText !== "";
-      });
-      return {
-        statusLine: message,
-        trials: trials.map((t) =>
-          t.id === s.liveTrialId ? { ...t, status: "error" as const } : t,
-        ),
-        liveTrialId: null,
-      };
-    }),
+    set((s) => ({
+      statusLine: message,
+      trials: mapLive(s.trials, s.liveTrialId, (t) => ({
+        ...t, status: "error" as const,
+      })),
+      liveTrialId: null,
+      pendingOpener: s.liveTrialId ? randomOpener() : s.pendingOpener,
+    })),
 
   inspect: (inspectId) => set({ inspectId }),
 
   resetLiveTrialForResend: () =>
     set((s) => ({
+      pendingOpener: s.trials.find((t) => t.id === s.liveTrialId)?.opener ?? s.pendingOpener,
       trials: s.trials.filter((t) => t.id !== s.liveTrialId),
       liveTrialId: null,
       inspectId: null,
     })),
 
-  clearTrials: () =>
+  clearTrials: () => {
+    const s = get();
+    if (s.starting || s.recording || s.processing || s.liveTrialId || s.ttsActive) return;
     set({
+      pendingOpener: randomOpener(),
       trials: [],
       liveTrialId: null,
       inspectId: null,
@@ -281,5 +285,6 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         baseline: { status: "idle" },
         prosodic: { status: "idle" },
       },
-    }),
+    });
+  },
 }));

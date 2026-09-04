@@ -30,19 +30,19 @@ const styles = stylex.create({
 });
 
 export function ClearButton() {
-  const hasTrials = useSessionStore((s) => s.trials.length > 0);
-  const liveTrialId = useSessionStore((s) => s.liveTrialId);
+  const busy = useSessionStore((s) => s.starting || s.recording ||
+    s.processing || s.liveTrialId !== null || s.ttsActive);
   const clearTrials = useSessionStore((s) => s.clearTrials);
   const setStatusLine = useSessionStore((s) => s.setStatusLine);
 
   return (
     <button
       type="button"
-      title={hasTrials ? "clear all trials" : "no trials to clear"}
+      title="clear trials and select an opener"
       aria-label="clear all trials"
-      disabled={!hasTrials || liveTrialId !== null}
+      disabled={busy}
       onClick={() => {
-        if (!hasTrials) return;
+        if (busy) return;
         clearTrials();
         setStatusLine("trials cleared");
         window.setTimeout(() => {
@@ -54,7 +54,7 @@ export function ClearButton() {
       }}
       {...stylex.props(
         styles.btn,
-        hasTrials && liveTrialId === null ? styles.btnEnabled : styles.btnDisabled,
+        busy ? styles.btnDisabled : styles.btnEnabled,
       )}
     >
       <Icon name="delete" size={18} />

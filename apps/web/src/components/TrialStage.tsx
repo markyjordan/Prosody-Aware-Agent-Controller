@@ -21,19 +21,26 @@ const styles = stylex.create({
     flexDirection: "column",
     gap: 4,
   },
-  empty: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    color: tokens.textMuted,
-    fontSize: 13,
-    padding: 24,
-    textAlign: "center",
+  opener: {
+    alignSelf: "flex-start",
+    backgroundColor: tokens.baselineTint,
+    border: `1px solid ${tokens.border}`,
+    borderRadius: 10,
+    padding: "12px 14px",
+    maxWidth: "94%",
+    fontSize: 15,
+    lineHeight: 1.5,
+    overflowWrap: "anywhere",
+    userSelect: "text",
+    marginBottom: 12,
   },
-  emptyIcon: { opacity: 0.5 },
+  agentLabel: {
+    display: "block",
+    fontSize: 11,
+    fontWeight: 700,
+    color: tokens.textMuted,
+    marginBottom: 6,
+  },
   archivedTag: {
     fontSize: 10,
     fontWeight: 700,
@@ -88,6 +95,15 @@ function metric(
   return typeof value === "number" ? Math.round(value) : null;
 }
 
+function AgentOpener({ text }: { text: string }) {
+  return (
+    <div {...stylex.props(styles.opener)} aria-label="Agent opening message">
+      <span {...stylex.props(styles.agentLabel)}>Agent</span>
+      <span>{text}</span>
+    </div>
+  );
+}
+
 function TrialCard({ trial, archived }: { trial: Trial; archived: boolean }) {
   const failed = trial.status === "error";
   const firstText = metric(
@@ -104,6 +120,7 @@ function TrialCard({ trial, archived }: { trial: Trial; archived: boolean }) {
   const ttsEntry = Object.entries(trial.ttsProfiles ?? {}).at(-1);
   return (
     <div {...stylex.props(styles.wrap)}>
+      <AgentOpener text={trial.opener} />
       {archived ? (
         <div {...stylex.props(styles.archivedTag)}>archived trial</div>
       ) : null}
@@ -155,19 +172,7 @@ export function TrialStage() {
   const trials = useSessionStore((s) => s.trials);
   const liveTrialId = useSessionStore((s) => s.liveTrialId);
 
-  if (trials.length === 0) {
-    return (
-      <div {...stylex.props(styles.empty)}>
-        <span {...stylex.props(styles.emptyIcon)}>
-          <Icon name="graphic_eq" size={32} />
-        </span>
-        <span>no trials yet</span>
-        <span>
-          hold the mic button or Space to start a trial
-        </span>
-      </div>
-    );
-  }
+  const pendingOpener = useSessionStore((s) => s.pendingOpener);
 
   return (
     <div {...stylex.props(styles.timeline)}>
@@ -189,6 +194,7 @@ export function TrialStage() {
           </div>
         );
       })}
+      {!liveTrialId ? <AgentOpener text={pendingOpener} /> : null}
     </div>
   );
 }

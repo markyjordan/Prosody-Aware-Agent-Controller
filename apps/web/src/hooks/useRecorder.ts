@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { useSessionStore } from "../state/store";
 
 const TARGET_RATE = 16000;
-const CHUNK_SAMPLES = TARGET_RATE / 10;
 
 class Resampler {
   private ratio: number;
@@ -66,119 +65,162 @@ interface RecorderOptions {
 
 export interface RecorderApi {
   start: () => Promise<boolean>;
-  stop: () => void;
+  stop: () => Promise<void>;
   cancel: () => void;
   analyserRef: RefObject<AnalyserNode | null>;
+}
+
+interface Capture {
+  ctx: AudioContext;
+  stream?: MediaStream;
+  source?: MediaStreamAudioSourceNode;
+  node?: AudioWorkletNode;
+  analyser?: AnalyserNode;
+  mute?: GainNode;
+  cancelled: boolean;
+  capturing: boolean;
+  pending: Float32Array[];
+  samples: number;
+  resampler: Resampler;
+  stopping?: Promise<void>;
+  finish?: () => void;
+}
+
+function dispose(capture: Capture) {
+  capture.capturing = false;
+  capture.stream?.getTracks().forEach((track) => track.stop());
+  capture.source?.disconnect();
+  capture.node?.disconnect();
+  capture.analyser?.disconnect();
+  capture.mute?.disconnect();
+  if (capture.node) capture.node.port.onmessage = null;
+  if (capture.ctx.state !== "closed") void capture.ctx.close().catch(() => {});
 }
 
 export function useRecorder(options: RecorderOptions = {}): RecorderApi {
   const onChunkRef = useRef(options.onChunk);
   onChunkRef.current = options.onChunk;
-
-  const ctxRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const nodeRef = useRef<AudioWorkletNode | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const resamplerRef = useRef<Resampler | null>(null);
-  const pendingRef = useRef<Float32Array[]>([]);
-  const pendingLenRef = useRef(0);
-  const capturingRef = useRef(false);
+  const captureRef = useRef<Capture | null>(null);
   const startingRef = useRef(false);
-  const stopDesiredRef = useRef(false);
+  const analyserRef = useRef<AnalyserNode | null>(null);
 
-  const flush = useCallback((final: boolean) => {
-    if (pendingLenRef.current === 0 && !final) return;
-    const merged = new Float32Array(pendingLenRef.current);
+  const flush = useCallback((capture: Capture) => {
+    if (!capture.samples) return;
+    const merged = new Float32Array(capture.samples);
     let offset = 0;
-    for (const chunk of pendingRef.current) {
+    for (const chunk of capture.pending) {
       merged.set(chunk, offset);
       offset += chunk.length;
     }
-    pendingRef.current = [];
-    pendingLenRef.current = 0;
+    capture.pending = [];
+    capture.samples = 0;
+    const samples = capture.resampler.process(merged);
+    if (samples.length) onChunkRef.current?.(pcm16ToBase64(samples));
+  }, []);
 
-    const resampled = resamplerRef.current?.process(merged) ?? merged;
-    if (resampled.length > 0) {
-      onChunkRef.current?.(pcm16ToBase64(resampled));
+  const cancel = useCallback(() => {
+    const capture = captureRef.current;
+    if (capture) {
+      capture.cancelled = true;
+      capture.finish?.();
+      dispose(capture);
     }
-    void final;
+    captureRef.current = null;
+    analyserRef.current = null;
+    useSessionStore.getState().setRecording(false);
   }, []);
 
   const start = useCallback(async (): Promise<boolean> => {
-    if (capturingRef.current) return true;
-    if (startingRef.current) return false;
+    if (startingRef.current || captureRef.current) return false;
     startingRef.current = true;
-    stopDesiredRef.current = false;
+    useSessionStore.getState().setStarting(true);
+    let capture: Capture | undefined;
     try {
-      if (!ctxRef.current || !streamRef.current || !nodeRef.current) {
-        let ctx: AudioContext;
-        try {
-          ctx = new AudioContext({ sampleRate: TARGET_RATE });
-        } catch {
-          ctx = new AudioContext();
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        const workletUrl = `${import.meta.env.BASE_URL}recorder-worklet.js`;
-        await ctx.audioWorklet.addModule(workletUrl);
-        const source = ctx.createMediaStreamSource(stream);
-        const node = new AudioWorkletNode(ctx, "recorder-processor");
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        source.connect(node);
-        source.connect(analyser);
-
-        ctxRef.current = ctx;
-        streamRef.current = stream;
-        nodeRef.current = node;
-        analyserRef.current = analyser;
-        resamplerRef.current = new Resampler(ctx.sampleRate, TARGET_RATE);
-
-        node.port.onmessage = (e: MessageEvent<Float32Array>) => {
-          if (!capturingRef.current) return;
-          pendingRef.current.push(e.data);
-          pendingLenRef.current += e.data.length;
-          if (pendingLenRef.current >= CHUNK_SAMPLES) flush(false);
-        };
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("microphone access requires HTTPS or localhost");
       }
-      await ctxRef.current.resume();
+      let ctx: AudioContext;
+      try {
+        ctx = new AudioContext({ sampleRate: TARGET_RATE });
+      } catch {
+        ctx = new AudioContext();
+      }
+      capture = {
+        ctx, cancelled: false, capturing: false, pending: [], samples: 0,
+        resampler: new Resampler(ctx.sampleRate, TARGET_RATE),
+      };
+      captureRef.current = capture;
+      const current = capture;
+      current.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1 },
+      });
+      if (current.cancelled) { dispose(current); return false; }
+      await ctx.audioWorklet.addModule(`${import.meta.env.BASE_URL}recorder-worklet.js`);
+      if (current.cancelled) { dispose(current); return false; }
+      current.source = ctx.createMediaStreamSource(current.stream);
+      current.node = new AudioWorkletNode(ctx, "recorder-processor", {
+        channelCount: 1, channelCountMode: "explicit",
+      });
+      current.analyser = ctx.createAnalyser();
+      current.analyser.fftSize = 1024;
+      current.mute = ctx.createGain();
+      current.mute.gain.value = 0;
+      current.source.connect(current.node);
+      current.source.connect(current.analyser);
+      current.node.connect(current.mute);
+      current.mute.connect(ctx.destination);
+      current.node.port.onmessage = (event: MessageEvent<Float32Array | string>) => {
+        if (current.cancelled) return;
+        if (event.data === "stopped") { current.finish?.(); return; }
+        if (!current.capturing || !(event.data instanceof Float32Array)) return;
+        current.pending.push(event.data);
+        current.samples += event.data.length;
+        if (current.samples >= ctx.sampleRate / 10) flush(current);
+      };
+      await ctx.resume();
+      if (current.cancelled) { dispose(current); return false; }
+      current.capturing = true;
+      analyserRef.current = current.analyser;
+      useSessionStore.getState().setRecording(true);
+      return true;
+    } catch (error) {
+      if (capture) dispose(capture);
+      if (captureRef.current === capture) captureRef.current = null;
+      if (capture?.cancelled) return false;
+      throw error;
     } finally {
       startingRef.current = false;
+      useSessionStore.getState().setStarting(false);
     }
-
-    if (stopDesiredRef.current) {
-      stopDesiredRef.current = false;
-      return false;
-    }
-    pendingRef.current = [];
-    pendingLenRef.current = 0;
-    capturingRef.current = true;
-    useSessionStore.getState().setRecording(true);
-    return true;
   }, [flush]);
 
-  const stop = useCallback(() => {
-    if (!capturingRef.current) {
-      stopDesiredRef.current = true;
-      return;
-    }
-    capturingRef.current = false;
-    flush(true);
-    useSessionStore.getState().setRecording(false);
-  }, [flush]);
+  const stop = useCallback((): Promise<void> => {
+    const capture = captureRef.current;
+    if (!capture?.capturing) { cancel(); return Promise.resolve(); }
+    if (capture.stopping) return capture.stopping;
+    capture.stopping = new Promise<void>((resolve) => {
+      // Messages preceding the acknowledgement contain the final audio frames.
+      const timeout = window.setTimeout(() => {
+        useSessionStore.getState().setStatusLine("error: microphone stopped responding");
+        capture.finish?.();
+      }, 1000);
+      capture.finish = () => {
+        window.clearTimeout(timeout);
+        capture.finish = undefined;
+        if (!capture.cancelled) flush(capture);
+        dispose(capture);
+        if (captureRef.current === capture) {
+          captureRef.current = null;
+          analyserRef.current = null;
+          useSessionStore.getState().setRecording(false);
+        }
+        resolve();
+      };
+      capture.node!.port.postMessage("stop");
+    });
+    return capture.stopping;
+  }, [cancel, flush]);
 
-  const cancel = useCallback(() => {
-    stopDesiredRef.current = true;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      capturingRef.current = false;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      void ctxRef.current?.close();
-    };
-  }, []);
-
-  return { start, stop, cancel, analyserRef };
+  useEffect(() => cancel, [cancel]);
+  return useMemo(() => ({ start, stop, cancel, analyserRef }), [start, stop, cancel]);
 }

@@ -79,7 +79,7 @@ function dispatch(evt: ServerEvent, marks: Map<string, ClientMarks>) {
   }
 }
 
-class SessionController {
+export class SessionController {
   private ws: WebSocket | null = null;
   private gen = 0;
   private desired = false;
@@ -88,6 +88,7 @@ class SessionController {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private activeTurnId: string | null = null;
   private sequence = 0;
+  private processingTurnId: string | null = null;
   private marks = new Map<string, ClientMarks>();
 
   connect(url: string) {
@@ -98,7 +99,9 @@ class SessionController {
 
   disconnect() {
     this.desired = false;
+    this.gen += 1;
     this.clearRetry();
+    this.invalidateActive("error: session disconnected");
     const ws = this.ws;
     this.ws = null;
     ws?.close();
@@ -107,6 +110,7 @@ class SessionController {
   }
 
   reinit() {
+    useSessionStore.getState().setSessionId(null);
     this.send({
       type: "session.init",
       protocolVersion: 1,
@@ -117,7 +121,10 @@ class SessionController {
   }
 
   beginTurn(): string | null {
-    if (this.ws?.readyState !== WebSocket.OPEN || this.activeTurnId) return null;
+    const store = useSessionStore.getState();
+    if (this.ws?.readyState !== WebSocket.OPEN || !store.sessionId ||
+        this.activeTurnId || this.processingTurnId || store.liveTrialId ||
+        store.ttsActive) return null;
     const turnId = crypto.randomUUID();
     this.activeTurnId = turnId;
     this.sequence = 0;
@@ -143,6 +150,8 @@ class SessionController {
     const client = this.marks.get(turnId) ?? {};
     client.released = performance.now();
     this.marks.set(turnId, client);
+    this.processingTurnId = turnId;
+    useSessionStore.getState().setProcessing(true);
     this.send({ type: "utterance.end", turnId });
     this.activeTurnId = null;
   }
@@ -154,11 +163,14 @@ class SessionController {
   }
 
   private invalidateActive(message: string) {
-    if (!this.activeTurnId) return;
+    const hadTurn = this.activeTurnId || this.processingTurnId;
     this.activeTurnId = null;
+    this.processingTurnId = null;
+    this.marks.clear();
     this.sequence = 0;
+    if (hadTurn) useSessionStore.getState().failActive(message);
     useSessionStore.getState().setRecording(false);
-    useSessionStore.getState().failActive(message);
+    useSessionStore.getState().setProcessing(false);
   }
 
   private clearRetry() {
@@ -206,7 +218,19 @@ class SessionController {
         console.warn("dropping malformed server event", result.error.issues);
         return;
       }
-      dispatch(result.data, this.marks);
+      const evt = result.data;
+      if (evt.type === "error" && !evt.branch) {
+        if (evt.turnId && evt.turnId !== this.activeTurnId &&
+            evt.turnId !== this.processingTurnId) return;
+        this.invalidateActive(`error: ${evt.message}`);
+        if (!evt.turnId) useSessionStore.getState().setStatusLine(`error: ${evt.message}`);
+        return;
+      }
+      dispatch(evt, this.marks);
+      if (evt.type === "turn.profile" && evt.turnId === this.processingTurnId) {
+        this.processingTurnId = null;
+        useSessionStore.getState().setProcessing(false);
+      }
     };
 
     ws.onclose = () => {

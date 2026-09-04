@@ -22,6 +22,7 @@ const styles = stylex.create({
     alignItems: "center",
     justifyContent: "center",
     transition: "border-color 0.15s, box-shadow 0.15s",
+    touchAction: "none",
   },
   idleHover: {
     ":hover": { borderColor: tokens.accent },
@@ -51,6 +52,9 @@ const styles = stylex.create({
 });
 
 export function MicButton({ recorder }: { recorder: RecorderApi }) {
+  const sessionId = useSessionStore((s) => s.sessionId);
+  const starting = useSessionStore((s) => s.starting);
+  const processing = useSessionStore((s) => s.processing);
   const conn = useSessionStore((s) => s.conn);
   const recording = useSessionStore((s) => s.recording);
   const ttsActive = useSessionStore((s) => s.ttsActive);
@@ -59,14 +63,16 @@ export function MicButton({ recorder }: { recorder: RecorderApi }) {
   const setPttMode = useSessionStore((s) => s.setPttMode);
 
   const { begin, end } = usePtt(recorder);
-  const busy = conn !== "connected" || liveTrialId !== null || ttsActive;
-  const disabled = busy && !recording;
+  const busy = !sessionId || conn !== "connected" || liveTrialId !== null ||
+    starting || processing || ttsActive;
+  const disabled = busy && !recording && !starting;
 
   return (
     <div {...stylex.props(styles.row)}>
       <button
         type="button"
         onClick={() => setPttMode(pttMode === "hold" ? "toggle" : "hold")}
+        disabled={starting || recording || processing || liveTrialId !== null}
         title="switch push-to-talk mode"
         {...stylex.props(styles.button, styles.modeToggle)}
       >
@@ -74,7 +80,9 @@ export function MicButton({ recorder }: { recorder: RecorderApi }) {
       </button>
       <button
         type="button"
-        aria-label={recording ? "stop recording" : "start recording"}
+        disabled={disabled}
+        aria-pressed={recording}
+        aria-label={starting ? "cancel microphone startup" : recording ? "stop recording" : "start recording"}
         title={
           pttMode === "hold"
             ? "Hold to talk (or hold Space)"
@@ -86,17 +94,33 @@ export function MicButton({ recorder }: { recorder: RecorderApi }) {
           disabled ? styles.disabled : null,
         )}
         onPointerDown={(e) => {
+          if (e.button !== 0 || !e.isPrimary) return;
           e.preventDefault();
+          e.currentTarget.setPointerCapture(e.pointerId);
           if (pttMode === "hold") begin();
         }}
-        onPointerUp={() => {
+        onPointerUp={(e) => {
+          if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
           if (pttMode === "hold") end();
+          e.currentTarget.releasePointerCapture(e.pointerId);
         }}
         onPointerCancel={() => {
           if (pttMode === "hold") end();
         }}
+        onLostPointerCapture={() => { if (pttMode === "hold") end(); }}
+        onKeyDown={(e) => {
+          if (pttMode !== "hold" || !["Space", "Enter"].includes(e.code)) return;
+          e.preventDefault();
+          if (!e.repeat) begin();
+        }}
+        onKeyUp={(e) => {
+          if (pttMode !== "hold" || !["Space", "Enter"].includes(e.code)) return;
+          e.preventDefault();
+          end();
+        }}
+        onBlur={() => { if (pttMode === "hold") end(); }}
         onClick={() => {
-          if (pttMode === "toggle") (recording ? end : begin)();
+          if (pttMode === "toggle") (recording || starting ? end : begin)();
         }}
       >
         {recording ? (

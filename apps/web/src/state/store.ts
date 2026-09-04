@@ -57,6 +57,8 @@ interface SessionStore {
   conn: ConnState;
   sessionId: string | null;
   recording: boolean;
+  starting: boolean;
+  processing: boolean;
   ttsActive: boolean;
   pttMode: "hold" | "toggle";
   scenario: string;
@@ -72,6 +74,8 @@ interface SessionStore {
   setConn: (c: ConnState) => void;
   setSessionId: (id: string | null) => void;
   setRecording: (r: boolean) => void;
+  setStarting: (starting: boolean) => void;
+  setProcessing: (processing: boolean) => void;
   setTtsActive: (active: boolean) => void;
   setPttMode: (m: "hold" | "toggle") => void;
   setScenario: (s: string) => void;
@@ -110,6 +114,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   conn: "disconnected",
   sessionId: null,
   recording: false,
+  starting: false,
+  processing: false,
   ttsActive: false,
   pttMode: "hold",
   scenario: "uncertain-yes",
@@ -127,6 +133,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   setConn: (conn) => set({ conn }),
   setSessionId: (sessionId) => set({ sessionId }),
   setRecording: (recording) => set({ recording }),
+  setStarting: (starting) => set({ starting }),
+  setProcessing: (processing) => set({ processing }),
   setTtsActive: (ttsActive) => set({ ttsActive }),
   setPttMode: (pttMode) => set({ pttMode }),
   setScenario: (scenario) => set({ scenario }),
